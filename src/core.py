@@ -23,9 +23,20 @@ class Database(object):
 
     # set to 'True' to get all plaintext sql-queries in 'stdout'
     debug = False
+
+    # central db-connection keeping:
+    db_file = None 
+    db_con = None
     
-    def __init__(self, dbfile="horst.sqlite"):
-        self.dbfile = dbfile
+    def __init__(self):
+        pass
+
+    def init(self, db_file, force=False):
+        """init database connection"""
+
+        if Database.db_con is None and force is not True:
+            Database.db_file = db_file
+            Database.db = Database()
 
     def contribute(self, cls):
         """Every Record has to "register" here"""
@@ -88,19 +99,19 @@ class Database(object):
         self.query_counter += 1
                
         with self.lock:
-            self.connection = sqlite.connect(self.dbfile)
+            self.db_con = sqlite.connect(self.db_file)
             
             # to return a dict for each row
-            self.connection.row_factory = sqlite.Row
+            self.db_con.row_factory = sqlite.Row
             
             # to auto-commit
-            self.connection.isolation_level = None
+            self.db_con.isolation_level = None
             
             ### text-encoding 
-            #self.connection.text_factory = sqlite.OptimizedUnicode
-            self.connection.text_factory = unicode
+            #self.db_con.text_factory = sqlite.OptimizedUnicode
+            self.db_con.text_factory = unicode
             
-            self.cursor = self.connection.cursor()
+            self.cursor = self.db_con.cursor()
             self.cursor.execute(q, args)
             self.lastrowid = self.cursor.lastrowid
 

@@ -7,7 +7,7 @@ import time
 from core import DatabaseError
 from baserecord import BaseRecord 
 
-from config import Config
+#from config import Config
 
 __metaclass__ = type
 
