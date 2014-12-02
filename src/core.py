@@ -26,17 +26,26 @@ class Database(object):
 
     # central db-connection keeping:
     db_file = None 
-    db_con = None
+    db_con = None 
     
-    def __init__(self):
-        pass
-
     def init(self, db_file, force=False):
         """init database connection"""
 
-        if Database.db_con is None and force is not True:
+        if Database.db_con is None or force is True:
             Database.db_file = db_file
-            Database.db = Database()
+    
+    def close(self, force=False):
+        if Database.db_con is not None or force is True:
+            if Database.db_con is not None:
+                Database.db_con.close()
+            Database.db_file = None
+            Database.db_con = None
+
+    def reset(self):
+        if Database.db_con is not None:
+            self.close()
+        Database.query_counter = 0
+        Database.contributed_records = []
 
     def contribute(self, cls):
         """Every Record has to "register" here"""
@@ -62,9 +71,7 @@ class Database(object):
 
         self.contributed_records += [cls]
 
-    # FIXME: _really_ check the tables, means including fields, 
-    # TODO: do some smart database updater if db-structure does not match Records
-    def check_for_tables(self):
+    def create_tables(self):
         """Check for all 'cls', if we need to create the needed table"""
         
         for rec in self.contributed_records:             
@@ -99,19 +106,20 @@ class Database(object):
         self.query_counter += 1
                
         with self.lock:
-            self.db_con = sqlite.connect(self.db_file)
+            if Database.db_con is None:
+                Database.db_con = sqlite.connect(Database.db_file)
             
             # to return a dict for each row
-            self.db_con.row_factory = sqlite.Row
+            Database.db_con.row_factory = sqlite.Row
             
             # to auto-commit
-            self.db_con.isolation_level = None
+            Database.db_con.isolation_level = None
             
             ### text-encoding 
             #self.db_con.text_factory = sqlite.OptimizedUnicode
-            self.db_con.text_factory = unicode
+            Database.db_con.text_factory = unicode
             
-            self.cursor = self.db_con.cursor()
+            self.cursor = Database.db_con.cursor()
             self.cursor.execute(q, args)
             self.lastrowid = self.cursor.lastrowid
 

@@ -25,10 +25,10 @@ class Book(BaseRecord):
     author = ManyToOneRelation(Author)
 
 # set up database
-fn = "::memory::"
+fn = ":memory:"
 db = Database()
 db.init(fn)
-db.check_for_tables()
+db.create_tables()
 
 # create model instances
 a1 = Author(name="Karl", family_name="der Tolle")
@@ -66,4 +66,4 @@ mybook.save()
 print mybook.author
 print mybook
 
-
+db.close()
