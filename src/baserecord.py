@@ -150,7 +150,9 @@ class BaseRecord(object):
                     )) for k, v in self]
         return "<{} {}>".format(
                 self.__class__.__name__, 
-                #" ".join(("{}={}".format(l.encode("utf-8") if hasattr(l, "encode") else "<None>", r.encode("utf-8") if hasattr(r, "encode") else "<None>") for l, r in data))
+                #" ".join(("{}={}".format(l.encode("utf-8") \
+                # if hasattr(l, "encode") else "<None>", r.encode("utf-8") \
+                # if hasattr(r, "encode") else "<None>") for l, r in data))
                 " ".join(("{}={}".format(l, r) for l, r in data))
             )
 
