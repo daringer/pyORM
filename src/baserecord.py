@@ -118,13 +118,12 @@ class BaseRecord(object):
         self.fields = {}
         #self.relations = {}
         
-        from fields import ManyToOneRelation, OneToManyRelation, \
-                OneToOneRelation, ManyToManyRelation #, AbstractRelationField 
+        from fields import ManyToOneRelation, OneToOneRelation, ManyToManyRelation 
 
         for name, field in self.__class__.base_fields.items():
-            self.add_field(field, name)
+            #self.add_field(field, name)
             # all fields are inserted here:
-            #self.fields[name] = field.clone()
+            self.fields[name] = field.clone()
 
             # fields resembling a relation, additionally here:
             #if issubclass(field, AbstractRelationField):
@@ -139,8 +138,8 @@ class BaseRecord(object):
                 raise DatabaseError("The field/keyword: '{}' was not found in the record".format(key))
 
         # set this obj as parent for all fields
-        #for name, field in self.fields.items():
-        #    field.parent = self
+        for name, field in self.fields.items():
+            field.parent = self
         
 
         # process each defined field
@@ -158,9 +157,12 @@ class BaseRecord(object):
                             format(k, str(self.found_primary_key)))
 
             #relation-field -> 1:N
-            elif issubclass(field.__class__, OneToManyRelation):
-                field.set(v)
-
+            #elif issubclass(field.__class__, OneToManyRelation):
+            #    #field.set(v)
+            #    #field.setup_relation(
+            #    print v
+            #    raise TypeError("Cannot set 1:N relation...")
+            #
             # relation-field -> N:1
             elif issubclass(field.__class__, ManyToOneRelation):
                 #rid = v if isinstance(v, int) else v.rowid
@@ -188,10 +190,6 @@ class BaseRecord(object):
             else:
                 field.set(v)
 
-    def add_field(self, field, name=None):
-        self.fields[name or field.name] = f = field.clone()
-        f.parent = self
-
     # yes save... means WHAT? save all containing items, too???                
     def save(self):
         """Save object in database"""
@@ -210,6 +208,7 @@ class BaseRecord(object):
             yield (f, getattr(self, f))
 
     def __repr__(self):
+        field_maxlen = 6
         data = [(k,v) if not isinstance(v, list) else \
                     (k, ("<{} rowids=[{}]>". \
                         format(v and v[0].__class__.__name__, ", ".join("{}".format(x.rowid) for x in v))
@@ -219,18 +218,26 @@ class BaseRecord(object):
                 #" ".join(("{}={}".format(l.encode("utf-8") \
                 # if hasattr(l, "encode") else "<None>", r.encode("utf-8") \
                 # if hasattr(r, "encode") else "<None>") for l, r in data))
-                " ".join(("{}={}".format(l, r) for l, r in data))
+                " ".join(("{}=<{}>".format(l, r[:field_maxlen] + "..." \
+                    if isinstance(r, (str, unicode)) and len(r) > field_maxlen \
+                    else r) for l, r in data))
             )
 
-    # to access the fields in the record as they were regular attributes
-    def __getattr__(self, key):
+    # access field-contents
+    def get(self, key):
         if key in self.__class__.base_fields:
             return self.fields[key].get()
         raise AttributeError("The attribute with the name: '{}' does not exist".format(key))
-        
-    def __setattr__(self, key, val):
-        if key in self.base_fields:
+    
+    def set(self, key, val):
+        if key in self.__class__.base_fields:
             self.fields[key].set(val)
             return 
         object.__setattr__(self, key, val)
    
+    # to access the fields in the record as they were regular attributes
+    def __getattr__(self, key):
+        return self.get(key)
+    # and set them as if they were attributes...
+    def __setattr__(self, key, val):
+        return self.set(key, val)

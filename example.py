@@ -5,7 +5,7 @@ sys.path.append("src/")
 
 from baserecord import BaseRecord
 from fields import StringField, IntegerField, DateTimeField, \
-        OneToManyRelation, FloatField, OptionField, ManyToOneRelation, \
+        FloatField, OptionField, ManyToOneRelation, \
         ManyToManyRelation
 from core import Database
 
@@ -22,12 +22,13 @@ class Book(BaseRecord):
     avail_since = DateTimeField(auto_now_add=True)
     abstract = StringField(size=1000)
     isbn = StringField(size=50)
-    author = OneToManyRelation(Author)
+    author = ManyToOneRelation(Author)
 
 # set up database
 fn = ":memory:"
 db = Database()
 db.init(fn)
+db.setup_relations()
 db.create_tables()
 
 # create model instances
@@ -44,14 +45,20 @@ b1 = Book(title="Der am Rechner stand",
         abstract="Sie gingen hier und spranger dort, yipee, was war das super",
         isbn="AJI42GER32FDG9",
         author=a1)
-
 # saving
 b1.save()
+
+b2 = Book(title="MoIssna", pub_date=int(time.time())-3423, 
+          abstract="brudalst", isbn="324FFWGRW324GS5S")
+# saving
+b2.save()
+
 
 # printing, and now fast a query...
 print a1 
 print a2 
-print b1
+print b1 
+print b2
 
 # access objects transparently through their class
 books = Book.objects.all()
@@ -62,8 +69,16 @@ mybook.isbn = "iojdoijofsd"
 mybook.abstract = "idosjifsdfoifsjd"
 mybook.save()
 
-# auto-join not yet active again...
+# joining works out of the box now!
 print mybook.author
 print mybook
+
+# book 2 
+b2.author = a2 
+b2.save()
+
+print b2 
+print b2.author
+
 
 db.close()

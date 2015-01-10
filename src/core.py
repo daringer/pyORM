@@ -51,29 +51,45 @@ class Database(object):
         """Every Record has to "register" here"""
         
         # handle relation fields
-        from fields import ManyToOneRelation, OneToManyRelation, \
-                OneToOneRelation, ManyToManyRelation
 
         for field in cls.base_fields.values():
             #####
             ##### backref= should be discussed (TODO)
-            fieldname = "re_" + cls.table
-            if isinstance(field, OneToManyRelation):
-                field.related_record.setup_field(cls.table, ManyToOneRelation(cls, name=fieldname))
-            elif isinstance(field, ManyToOneRelation):
-                field.related_record.setup_field(cls.table, OneToManyRelation(cls))
-            elif isinstance(field, OneToOneRelation):
-                field.related_record.setup_field(cls.table, OneToOneRelation(cls, name=fieldname))
-            elif isinstance(field, ManyToManyRelation):
-                field.related_record.setup_field(cls.table, ManyToManyRelation(cls, name=fieldname))
+            #if isinstance(field, OneToManyRelation):
+            #    field.related_record.setup_field(cls.table, ManyToOneRelation(cls, name=fieldname))
+            #elif isinstance(field, ManyToOneRelation):
+            #    field.related_record.setup_field(cls.table, OneToManyRelation(cls))
+            #elif isinstance(field, OneToOneRelation):
+            #    field.related_record.setup_field(cls.table, OneToOneRelation(cls, name=fieldname))
+            #elif isinstance(field, ManyToManyRelation):
+            #    field.related_record.setup_field(cls.table, ManyToManyRelation(cls, name=fieldname))
             #####
             #####
+            pass
 
         self.contributed_records += [cls]
+
+    def setup_relations(self):
+        from fields import AbstractRelationField
+
+        # first go over all to gather relation-fields
+        relation_fields = []
+        for rec in self.contributed_records:
+            for k, v in rec.base_fields.items():
+                # assign parent - makes sense here ....
+                v.parent = rec
+                if isinstance(v, AbstractRelationField):
+                    relation_fields.append((k, v))
+
+        # DO NOT DO THIS DURING THE FOR ITERATION - will generate cycles and explode
+        for k, v in relation_fields:
+            v.setup_relation()
+
 
     def create_tables(self):
         """Check for all 'cls', if we need to create the needed table"""
         
+        # finally create all tables inside the database
         for rec in self.contributed_records:             
             # there is no 'show tables' sql-statement in sqlite so query sqlite_master
             q = "SELECT * FROM sqlite_master WHERE type='table' AND tbl_name='{}'".format(rec.table)
@@ -88,10 +104,10 @@ class Database(object):
             if len(rec.base_fields) == 0:
                 raise DatabaseError("Could not create table: {}, there are no fields defined for it!".format(rec.table))
 
-            # actually build creation of table-query
+            # actually build creation of table-query 
             q = "CREATE TABLE {} ({})". \
                     format(rec.table, ", ".join(x.get_create() \
-                        for x in rec.base_fields.values() if x.name)
+                        for x in rec.base_fields.values() if x.name and x.get_create() != "")
                     )
             self.query(q)
        
