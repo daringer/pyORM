@@ -74,6 +74,9 @@ class BaseRecord(object):
 
         assert not name.startswith("_"), 
             "fieldnames starting with an underscore '_' are not allowed!"
+        # reserved keywords, catch...
+        assert not name in ["fields", "relations"],
+            "'{}' is not allowed as field name".format(name)
 
         field.name = name
         cls.base_fields[name] = field
