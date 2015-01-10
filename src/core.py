@@ -61,9 +61,9 @@ class Database(object):
             if isinstance(field, OneToManyRelation):
                 field.related_record.setup_field(cls.table, ManyToOneRelation(cls, name=fieldname))
             elif isinstance(field, ManyToOneRelation):
-                field.related_record.setup_field(cls.table, OneToManyRelation(cls, name=fieldname))
+                field.related_record.setup_field(cls.table, OneToManyRelation(cls))
             elif isinstance(field, OneToOneRelation):
-                field.related_record.setup_field(cls.table, OneToOneRelation(cls, name=fieldname))                                     
+                field.related_record.setup_field(cls.table, OneToOneRelation(cls, name=fieldname))
             elif isinstance(field, ManyToManyRelation):
                 field.related_record.setup_field(cls.table, ManyToManyRelation(cls, name=fieldname))
             #####
@@ -254,6 +254,14 @@ class DataManager(object):
 
     def __getitem__(self, key):
         """Behave like a list of objects, 'key' is a non-database/result-only related up counting index"""
+
+        # implement slicing! TODO FIXME
+        if not isinstance(key, (int, long)):
+            raise TypeError("'{}' (type: {}) is not a valid index". \
+                    format(str(key), key.__class__.__name__))
+
+        # slice -> .start .stop .step .... isinstance(key, slice)
+
         return self.record.database.filter(self.record, limit=(key,1))[0]
     
     def all(self):

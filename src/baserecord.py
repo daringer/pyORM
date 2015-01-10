@@ -6,22 +6,49 @@ from core import DatabaseError, DataManager, Database
 
 __metaclass__ = type
 
-class BaseRelationWrapper(object):
-    pass 
-
-class OneToOneRelationWrapper(BaseRelationWrapper):
-    def __init__(self, target_cls):
-        self._target = target_cls
-        self._fields = 
-
-def relation_wrapper_factory(target_cls, base_wrapper_cls):
-    O = type(target_cls.__class__.__name__ + "RelationWrapper", 
-        (base_wrapper_cls, ), {})
-
-    for name, f_cls target_cls.base_fields.items():
-        
-
-
+#class BaseRelationWrapper(object):
+#    def __init__(self, target_cls, obj, ex): 
+#        # target class relate to
+#        self._target = target_cls
+#        # my own object instance (row/record)
+#        self._parent = obj
+#        # expression used for matching/join
+#        self.expr = ex 
+#
+#    def _get_db_interface(self):
+#        raise NotImplementedError()
+#    
+# Nearly (transparent) wrapper for a single object 
+# one2one: table1.id <-> table2.id
+#class OneToOneRelationWrapper(BaseRelationWrapper):
+#    # to access the fields in the record as they were regular attributes
+#    def __getattr__(self, key):
+#        if key in self._target.base_fields:
+#            return self._get_db_interface()(_=self.expr)
+#        raise AttributeError("The attribute with the name: '{}' does not exist".format(key))
+#        
+#    def __setattr__(self, key, val):
+#        if key in self._target.base_fields:
+#            raise NotImplementedError("found field, but setting not supported, yet...TODO")
+#        object.__setattr__(self, key, val)
+#
+#    def _get_db_interface(self):
+#        return self._target.objects.get
+#
+## handles like a list - sounds _CRAZY_
+## one2many: table1.id <-> [table2.ref_id, ...]
+#class OneToManyRelationWrapper(list, BaseRelationWrapper):
+#    def __init__(self, target_cls, obj, ex):
+#        list.__init__()
+#        BaseRelationWrapper.__init__(target_cls, obj, ex)
+#
+#    def _get_db_interface(self):
+#        return self._target.objects.filter
+#
+#
+#def relation_wrapper_factory(target_cls, base_wrapper_cls):
+#    return type(target_cls.__class__.__name__ + "RelationWrapper", 
+#        (base_wrapper_cls, ), {})
 
 
 class MetaBaseRecord(type):
@@ -72,10 +99,12 @@ class BaseRecord(object):
     def setup_field(cls, name, field):
         """Only for internal use, don't mess with it!"""
 
-        assert not name.startswith("_"), 
+        # no starting underscore "_" in fieldname
+        assert not name.startswith("_"), \
             "fieldnames starting with an underscore '_' are not allowed!"
         # reserved keywords, catch...
-        assert not name in ["fields", "relations"],
+        #assert not name in ["fields", "relations", "table"], \
+        assert not name in ["fields", "table"], \
             "'{}' is not allowed as field name".format(name)
 
         field.name = name
@@ -87,18 +116,19 @@ class BaseRecord(object):
     def __init__(self, **kw):
         # copy class base_fields to instanc:e
         self.fields = {}
-        self.relations = {}
+        #self.relations = {}
         
         from fields import ManyToOneRelation, OneToManyRelation, \
-                OneToOneRelation, ManyToManyRelation, AbstractRelationField 
+                OneToOneRelation, ManyToManyRelation #, AbstractRelationField 
 
         for name, field in self.__class__.base_fields.items():
+            self.add_field(field, name)
             # all fields are inserted here:
-            self.fields[name] = field.clone()
+            #self.fields[name] = field.clone()
 
             # fields resembling a relation, additionally here:
-            if issubclass(field, AbstractRelationField):
-                self.relations[name] = self.fields[name]
+            #if issubclass(field, AbstractRelationField):
+            #    self.relations[name] = relation_wrapper_factory(field.
 
         # if there is some keyword-argument, that is not handled by the record, throw exception
         for key in kw:
@@ -109,8 +139,8 @@ class BaseRecord(object):
                 raise DatabaseError("The field/keyword: '{}' was not found in the record".format(key))
 
         # set this obj as parent for all fields
-        for name, field in self.fields.items():
-            field.parent = self
+        #for name, field in self.fields.items():
+        #    field.parent = self
         
 
         # process each defined field
@@ -127,7 +157,7 @@ class BaseRecord(object):
                     raise DatabaseError("Found multiple 'primary_key' flagged fields. Inserting: {} Found: {}". \
                             format(k, str(self.found_primary_key)))
 
-            # relation-field -> 1:N
+            #relation-field -> 1:N
             elif issubclass(field.__class__, OneToManyRelation):
                 field.set(v)
 
@@ -138,10 +168,10 @@ class BaseRecord(object):
                 field.set(v)
 
             # relation-field -> 1:1
-            elif issubclass(field.__class__, OneToOneRelation):
+            #elif issubclass(field.__class__, OneToOneRelation):
                 #rid = v if isinstance(v, int) else v.rowid
                 #field.set(field.related_record.objects.get(rowid=rid))
-                field.set(v)
+            #    field.set(v)
 
             # relation-field -> N:M
             elif issubclass(field.__class__, ManyToManyRelation):
@@ -157,6 +187,10 @@ class BaseRecord(object):
             # regular, all other fields
             else:
                 field.set(v)
+
+    def add_field(self, field, name=None):
+        self.fields[name or field.name] = f = field.clone()
+        f.parent = self
 
     # yes save... means WHAT? save all containing items, too???                
     def save(self):

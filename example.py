@@ -22,7 +22,7 @@ class Book(BaseRecord):
     avail_since = DateTimeField(auto_now_add=True)
     abstract = StringField(size=1000)
     isbn = StringField(size=50)
-    author = ManyToOneRelation(Author)
+    author = OneToManyRelation(Author)
 
 # set up database
 fn = ":memory:"

@@ -6,6 +6,7 @@ import time
 
 from core import DatabaseError
 from baserecord import BaseRecord 
+from field_expression import FieldExpression
 
 #from config import Config
 
@@ -124,7 +125,59 @@ class AbstractField(object):
         
     def post_save(self, action="insert", obj=None):
         """This is called directly after the object was saved (action: 'update' or 'insert')"""
-        return True
+        return True 
+
+    # rich comparision methods, 
+    # all return a FieldExpression for lazy evaluation
+    def __lt__(self, other):
+        return FieldExpression(self, other, operator.lt)
+
+    def __le__(self, other):
+        return FieldExpression(self, other, operator.le)
+
+    def __eq__(self, other):
+        return FieldExpression(self, other, operator.eq)
+
+    def __ne__(self, other):
+        return FieldExpression(self, other, operator.ne)
+
+    def __gt__(self, other):
+        return FieldExpression(self, other, operator.gt)
+
+    def __ge__(self, other):
+        return FieldExpression(self, other, operator.ge)
+
+    def __contains__(self, other):
+        return FieldExpression(self, other, operator.contains)
+
+    def __len__(self):
+        return FieldExpression(self, None, len)
+
+    def __and__(self, other):
+        return FieldExpression(self, other, operator.and_)
+
+    def __xor__(self, other):
+        return FieldExpression(self, other, operator.xor)
+
+    def __or__(self, other):
+        return FieldExpression(self, other, operator.or_)
+    
+    def __invert__(self):
+        return FieldExpression(self, None, operator.inv) 
+
+    def __add__(self, other):
+        return FieldExpression(self, other, operator.add)
+
+    def __sub__(self, other):
+        return FieldExpression(self, other, operator.sub)
+
+    def __mul__(self, other):
+        return FieldExpression(self, other, operator.mul)
+
+    def __div__(self, other):
+        return FieldExpression(self, other, operator.div)
+
+            
 
 class IntegerField(AbstractField):
     """Store a single integer value. 
@@ -283,8 +336,10 @@ class AbstractRelationField(AbstractField):
         self.name = name or self.name
 
         kw.update({"related_record" : related_record})
-        if related_field is None:
-            related_field = "re_" + (name or self.__class__.__name__);
+        
+        #if related_field is None:
+        #    related_field = "re_" + (name or self.__class__.__name__);
+        #return self._value
 
         super(AbstractRelationField, self).__init__(**kw)
         
@@ -294,7 +349,7 @@ class AbstractRelationField(AbstractField):
 
     def get(self):
         raise NotImplementedError()
-        
+
     def set(self, val):
         raise NotImplementedError()
 
@@ -307,14 +362,16 @@ class AbstractRelationField(AbstractField):
 
 class OneToManyRelation(AbstractRelationField):
     def get(self):
-        return self._value
+        q = {self.related_field: self.parent.rowid}
+        return self.related_record.objects.get(**q)
 
     def set(self, val):
         self._value = val
 
 class ManyToOneRelation(AbstractRelationField):
     def get(self):
-        return self._value
+        #q = {self._field: self.parent.rowid}
+        self,objec
 
     def set(self, val):
         self._value = val
