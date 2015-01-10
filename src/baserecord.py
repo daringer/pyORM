@@ -6,6 +6,24 @@ from core import DatabaseError, DataManager, Database
 
 __metaclass__ = type
 
+class BaseRelationWrapper(object):
+    pass 
+
+class OneToOneRelationWrapper(BaseRelationWrapper):
+    def __init__(self, target_cls):
+        self._target = target_cls
+        self._fields = 
+
+def relation_wrapper_factory(target_cls, base_wrapper_cls):
+    O = type(target_cls.__class__.__name__ + "RelationWrapper", 
+        (base_wrapper_cls, ), {})
+
+    for name, f_cls target_cls.base_fields.items():
+        
+
+
+
+
 class MetaBaseRecord(type):
     """The MetaClass used to accomplish the dynamic generated Record classes"""
     def __init__(cls, name, bases, dct):
