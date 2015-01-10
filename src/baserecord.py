@@ -22,7 +22,6 @@ class MetaBaseRecord(type):
                 if len(att) < 2:
                     raise DatabaseError("For __reasons unknown__ field names must have at least 2 chars")
 
-
                 # identify and setup fields inside this record
                 field = getattr(cls, att)
                 from fields import AbstractField
@@ -63,8 +62,18 @@ class BaseRecord(object):
     def __init__(self, **kw):
         # copy class base_fields to instanc:e
         self.fields = {}
+        self.relations = {}
+        
+        from fields import ManyToOneRelation, OneToManyRelation, \
+                OneToOneRelation, ManyToManyRelation, AbstractRelationField 
+
         for name, field in self.__class__.base_fields.items():
+            # all fields are inserted here:
             self.fields[name] = field.clone()
+
+            # fields resembling a relation, additionally here:
+            if issubclass(field, AbstractRelationField):
+                self.relations[name] = self.fields[name]
 
         # if there is some keyword-argument, that is not handled by the record, throw exception
         for key in kw:
@@ -78,8 +87,6 @@ class BaseRecord(object):
         for name, field in self.fields.items():
             field.parent = self
         
-        from fields import ManyToOneRelation, OneToManyRelation, \
-                OneToOneRelation, ManyToManyRelation
 
         # process each defined field
         self.rowid = None
