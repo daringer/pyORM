@@ -71,6 +71,10 @@ class BaseRecord(object):
     @classmethod
     def setup_field(cls, name, field):
         """Only for internal use, don't mess with it!"""
+
+        assert not name.startswith("_"), 
+            "fieldnames starting with an underscore '_' are not allowed!"
+
         field.name = name
         cls.base_fields[name] = field
         
