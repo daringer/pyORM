@@ -59,7 +59,7 @@ class MetaBaseRecord(type):
         if not name == "BaseRecord":                
             cls.table = name.lower()
             
-            # move all "*Fields" to self.fields and init atts to None
+            # move all "*Fields" to self.fields 
             cls.base_fields = {}
             for att in cls.__dict__.keys()[:]:
                 
@@ -90,7 +90,7 @@ class MetaBaseRecord(type):
             
             # populate cls.objects 
             cls.objects = DataManager(cls)
-
+            
 class BaseRecord(object):
     """Every Record Class has to derive from this Class"""
     __metaclass__ = MetaBaseRecord
@@ -107,9 +107,11 @@ class BaseRecord(object):
         assert not name in ["fields", "table"], \
             "'{}' is not allowed as field name".format(name)
 
+        #print "setting up field: ", name, field, " in ", cls
         field.name = name
-        cls.base_fields[name] = field
+        cls.base_fields[name] = field.clone()
         
+        #print cls.base_fields 
         if hasattr(cls, name):
             delattr(cls, name)
 
@@ -119,6 +121,7 @@ class BaseRecord(object):
         #self.relations = {}
         
         from fields import ManyToOneRelation, OneToOneRelation, ManyToManyRelation 
+
 
         for name, field in self.__class__.base_fields.items():
             #self.add_field(field, name)
@@ -208,10 +211,12 @@ class BaseRecord(object):
             yield (f, getattr(self, f))
 
     def __repr__(self):
+        """Should show the INSTANCE attributes, and omit the class/field ones"""
         field_maxlen = 6
         data = [(k,v) if not isinstance(v, list) else \
                     (k, ("<{} rowids=[{}]>". \
-                        format(v and v[0].__class__.__name__, ", ".join("{}".format(x.rowid) for x in v))
+                        format(v and v[0].__class__.__name__, 
+                               ", ".join("{}".format(x.rowid) for x in v))
                     )) for k, v in self]
         return "<{} {}>".format(
                 self.__class__.__name__, 

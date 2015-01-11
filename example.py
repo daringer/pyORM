@@ -22,7 +22,7 @@ class Book(BaseRecord):
     avail_since = DateTimeField(auto_now_add=True)
     abstract = StringField(size=1000)
     isbn = StringField(size=50)
-    author = ManyToOneRelation(Author)
+    author = ManyToOneRelation(Author, backref="books")
 
 # set up database
 fn = ":memory:"
@@ -30,6 +30,7 @@ db = Database()
 db.init(fn)
 db.setup_relations()
 db.create_tables()
+
 
 # create model instances
 a1 = Author(name="Karl", family_name="der Tolle")
@@ -49,16 +50,20 @@ b1 = Book(title="Der am Rechner stand",
 b1.save()
 
 b2 = Book(title="MoIssna", pub_date=int(time.time())-3423, 
-          abstract="brudalst", isbn="324FFWGRW324GS5S")
+          abstract="brudalst", isbn="324FFWGRW324GS5S", author=a1)
 # saving
 b2.save()
 
 
 # printing, and now fast a query...
-print a1 
-print a2 
-print b1 
-print b2
+#print a1 
+#print a2 
+#print b1 
+#print b2
+
+print a1.books
+print len(a1.books)
+
 
 # access objects transparently through their class
 books = Book.objects.all()
@@ -69,7 +74,7 @@ mybook.isbn = "iojdoijofsd"
 mybook.abstract = "idosjifsdfoifsjd"
 mybook.save()
 
-# joining works out of the box now!
+# joining (of explicit relations) works out of the box now!
 print mybook.author
 print mybook
 
@@ -77,8 +82,8 @@ print mybook
 b2.author = a2 
 b2.save()
 
-print b2 
-print b2.author
+print len(a1.books)
 
+# fine backref + 1:N + N:1 works good
 
 db.close()

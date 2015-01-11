@@ -76,14 +76,8 @@ class Database(object):
         relation_fields = []
         for rec in self.contributed_records:
             for k, v in rec.base_fields.items():
-                # assign parent - makes sense here ....
-                v.parent = rec
-                if isinstance(v, AbstractRelationField):
-                    relation_fields.append((k, v))
-
-        # DO NOT DO THIS DURING THE FOR ITERATION - will generate cycles and explode
-        for k, v in relation_fields:
-            v.setup_relation()
+                if issubclass(v.__class__, AbstractRelationField):
+                    v.setup_relation(rec)
 
 
     def create_tables(self):
@@ -102,12 +96,14 @@ class Database(object):
             ## here we haven't found the table
             # first check for field-number > 0
             if len(rec.base_fields) == 0:
-                raise DatabaseError("Could not create table: {}, there are no fields defined for it!".format(rec.table))
+                raise DatabaseError("Could not create table: {}, no fields!". \
+                        format(rec.table))
 
             # actually build creation of table-query 
             q = "CREATE TABLE {} ({})". \
                     format(rec.table, ", ".join(x.get_create() \
-                        for x in rec.base_fields.values() if x.name and x.get_create() != "")
+                        for x in rec.base_fields.values() \
+                            if x.name and x.get_create() not in ["", None])
                     )
             self.query(q)
        
@@ -161,8 +157,9 @@ class Database(object):
                         format(attr, getattr(obj, attr)))
      
         # collect data (omit empty-fields, pseudo-fields)
-        attr_vals = [{"col": k, "val": v.get()} for k, v in obj.fields.items() \
-                if v.get() is not None]
+        attr_vals = [{"col": k, "val": v.get_save()} \
+                for k, v in obj.fields.items() \
+                    if v.get_save() is not None]
 
         # replace BaseRecord descendants with their .rowid 
         from baserecord import BaseRecord

@@ -43,6 +43,11 @@ class AbstractField(object):
             raise DatabaseError("Keyword(s): {} not supported by this Field: {}". \
                     format(", ".join(wrong), self.__class__.__name__))
         
+        # accepted keywords get None as default 
+        for k in self.accepted_keywords:
+            if not k in kw:
+                kw[k] = None
+
         # setting FieldObjects as member names
         for k, v in kw.items():
             setattr(self, k, v) 
@@ -52,23 +57,36 @@ class AbstractField(object):
             val = kw.get(k) if k in kw else getattr(self.__class__, k)
             setattr(self, k, val)
 
+
         # keeps the explicit value of this field (and it's object, if applicable)
         self._value = self.default if not "default" in kw else kw["default"]
 
-        # parent record class
+        # parent record object
         self.parent = None
+
         # keep the passed keyword-dict from instantiation
-        self.passed_kw = kw
+        #self.passed_kw = kw
+        # -> clone
 
     # if an attribute is in "accepted_keywords", but not set return "None"
-    def __getattr__(self, key):
-        if key in self.accepted_keywords + self.general_keywords:
-            return None
-        raise AttributeError(key)
+    #def __getattr__(self, key):
+    #    if key in self.accepted_keywords + self.general_keywords:
+    #        return None
+    #    raise AttributeError(key)
 
     def clone(self):
         """Mainly internal use - returns a clone (copy) of the AbstractField"""
-        return self.__class__(**self.passed_kw)
+        #print "CLONE: ", self, id(self)
+        #if "backref" in self.accepted_keywords:
+        #    print self.backref
+        kw = {}
+        for k in self.accepted_keywords + self.general_keywords:
+            kw[k] = getattr(self, k)    
+        out = self.__class__(**kw)
+        #print "RESULT: ", out, id(out)
+        #if "backref" in out.accepted_keywords:
+            #print self.backref
+        return out
 
     def get_create(self, prefix=None, suffix=None):
         """Get universal attributes needed for create column query"""
@@ -106,8 +124,14 @@ class AbstractField(object):
         self._value = v
 
     def get(self):
-        """Get field (raw) value"""
-        return self._value
+        """Get field value"""
+        return self._value 
+
+    def get_save(self):
+        """Get field's value to be saved. 
+        Override if there is no column in the record for this field,
+        and simply return None, all other wrap to ::get()"""
+        return self.get()
 
     def get_escaped(self, default=False):
         """Get field value escaped/quoted - for sql update/insert"""
@@ -322,58 +346,55 @@ class OptionField(StringField):
         self._value = val
 
 class AbstractRelationField(AbstractField):
-    accepted_keywords = ["rel_record"]
+    accepted_keywords = ["rel_record", "backref"]
     
-    def __init__(self, rel_record, expr=None, name=None, **kw):
+    def __init__(self, rel_record, backref=None, expr=None, **kw):
         assert issubclass(rel_record, BaseRecord)
         
-        self.name = name or rel_record.__class__.__name__
-
-        kw.update({"rel_record" : rel_record})
+        kw.update({
+            "rel_record" : rel_record,
+            "backref": backref,
+            })
         
         super(AbstractRelationField, self).__init__(**kw)
         
-        self.rel_record = rel_record
-        self.rel_other_field = None 
-         
-        self.name = name
-
     def get(self):
         raise NotImplementedError()
 
     def set(self, val):
         raise NotImplementedError()
 
-    def setup_relation(self):
+    def setup_relation(self, record):
         raise NotImplementedError()
-    
-    #def get_create(self, prefix=None, suffix=None):
-    #    return ""
+   
+# column in 'rel_record' pointing at my parent 
+# this field MUST always generate a backref ...
+class OneToManyRelation(AbstractRelationField):
+    def get(self):
+        q = {self.backref: self.parent}
+        return self.rel_record.objects.filter(**q)
 
-    #def get_create(self, prefix=None, suffix=None):
-    #    out = "{} {}".format(self.name, "INT")
-    #    return (prefix or "") \
-    #           + super(AbstractRelationField, self).get_create(prefix=out) \
-    #           + (suffix or "")
+    def set(self, val):
+        #self._value = val
+        raise NotImplementedError()
 
-#class OneToManyRelation(AbstractRelationField):
-#    """default: 
-#    the other table/record has a field, which contains my 'rowid'
-#    """
-#    def get(self):
-#        q = {self.rel_field.name: self.parent.rowid}
-#        return self.related_record.objects.filter(**q)
-#
-#    def set(self, val):
-#        #self._value = val
-#        raise NotImplementedError()
-#
-#    def setup_relation(self):
-#        f = ManyToOneRelation(self.parent, self.parent.__class__.__name__)
-#        f.rel_record = self.parent
-#        f.rel_other_field = None 
-#        self.rel_record.setup_field(self.parent.__class__.__name__, f)
+    def setup_relation(self, record): 
+        # generate field name if not provided as 'backref'
+        name = self.backref 
+        if name is None:
+            name = record.__name___.lower()
+            self.backref = name
 
+        self.rel_record.setup_field(self.backref, 
+            ManyToOneRelation(record, name=self.backref))
+
+    def get_save(self):
+        return None 
+
+    def get_create(self, prefix=None, suffix=None):
+        return None
+
+# column in 'my parent' record, each entry references ONE 'rel_record'
 class ManyToOneRelation(AbstractRelationField, IntegerField):
     def get(self):
         return self.rel_record.objects.get(rowid=self._value)
@@ -387,17 +408,13 @@ class ManyToOneRelation(AbstractRelationField, IntegerField):
             raise TypeError(
                 "Passed wrong value to {}. instead of {}, I got {}")
     
-    def setup_relation(self):
-        #f = OneToManyRelation(self.parent, self.parent.name)
-        #f.rel_record = self.parent
-        #f.rel_other_field = self
-        #self.rel_record.setup_field(self.parent.name, f)
-
-        pass 
-
-        # NEED SOMETHING TO REPLACE ONE2MANY_RELATION, NO BACKREF ATM!!!!
-
-
+    def setup_relation(self, record):
+        if self.backref is not None:
+            f = OneToManyRelation(record, name=self.backref, backref=self.name)
+            #print f , id(f)
+            #setattr(self.rel_record, self.backref, f)
+            self.rel_record.setup_field(self.backref, f) 
+                
             
 class ManyToManyRelation(AbstractRelationField):
     def get(self):
