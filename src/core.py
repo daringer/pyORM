@@ -211,7 +211,9 @@ class Database(object):
         from baserecord import BaseRecord
         for k, v in kw.items():
             if k in cls.base_fields and isinstance(cls.base_fields[k], ManyToOneRelation):
-                kw[k] = v.rowid if v else None
+                kw[k] = v.rowid 
+                    # if v else None <- no!, something like a rowid always exists!
+                    # this MUST be true for all Fields in cls::base_fields
         
         # use 'kw'-dict as WHERE CLAUSE
         if kw:
