@@ -9,65 +9,73 @@ __metaclass__ = type
 class DatabaseError(Exception):
     pass
 
-class Database(object):
-    """Low-Level Object-Based Database Interface"""
-
-    # locking mechanism!
-    lock = Lock()
-
-    # mmmh, system wide list of contributing records?! 
-    contributed_records = []
-
+class BaseDatabase(object):
+    """Base datastorage interface"""
+ 
     # save the number of done queries
     query_counter = 0
 
     # set to 'True' to get all plaintext sql-queries in 'stdout'
     debug = False
+    
+    # mmmh, system wide list of contributing records?! 
+    contributed_records = []
 
-    # central db-connection keeping:
+    def contribute(self, cls):
+        """Every Record has to "register" here"""
+       
+        self.contributed_records += [cls]
+
+    def init(self, force=False):
+        raise NotImplementedError()
+    def close(self, force=False):
+        raise NotImplementedError()
+    def reset(self):
+        raise NotImplementedError()
+    
+    def save_obj(self, obj):
+        raise NotImplementedError()
+    def delete_obj(self, obj):
+        raise NotImplementedError()
+    def filter(self):
+        raise NotImplementedError()
+
+    def setup_relations(self):
+        raise NotImplementedError()
+    def create_tables(self):
+        raise NotImplementedError()
+
+class MemoryDatabase(BaseDatabase):
+    pass
+
+class SQLiteDatabase(BaseDatabase):
+    """Low-Level Object-Based SQLiteDatabase Interface"""
+
+    # locking mechanism!
+    lock = Lock()
+
+     # central db-connection keeping:
     db_file = None 
     db_con = None 
     
     def init(self, db_file, force=False):
-        """init database connection"""
+        """init SQLiteDatabase connection"""
 
-        if Database.db_con is None or force is True:
-            Database.db_file = db_file
+        if SQLiteDatabase.db_con is None or force is True:
+            SQLiteDatabase.db_file = db_file
     
     def close(self, force=False):
-        if Database.db_con is not None or force is True:
-            if Database.db_con is not None:
-                Database.db_con.close()
-            Database.db_file = None
-            Database.db_con = None
+        if SQLiteDatabase.db_con is not None or force is True:
+            if SQLiteDatabase.db_con is not None:
+                SQLiteDatabase.db_con.close()
+            SQLiteDatabase.db_file = None
+            SQLiteDatabase.db_con = None
 
     def reset(self):
-        if Database.db_con is not None:
+        if SQLiteDatabase.db_con is not None:
             self.close()
-        Database.query_counter = 0
-        Database.contributed_records = []
-
-    def contribute(self, cls):
-        """Every Record has to "register" here"""
-        
-        # handle relation fields
-
-        for field in cls.base_fields.values():
-            #####
-            ##### backref= should be discussed (TODO)
-            #if isinstance(field, OneToManyRelation):
-            #    field.related_record.setup_field(cls.table, ManyToOneRelation(cls, name=fieldname))
-            #elif isinstance(field, ManyToOneRelation):
-            #    field.related_record.setup_field(cls.table, OneToManyRelation(cls))
-            #elif isinstance(field, OneToOneRelation):
-            #    field.related_record.setup_field(cls.table, OneToOneRelation(cls, name=fieldname))
-            #elif isinstance(field, ManyToManyRelation):
-            #    field.related_record.setup_field(cls.table, ManyToManyRelation(cls, name=fieldname))
-            #####
-            #####
-            pass
-
-        self.contributed_records += [cls]
+        SQLiteDatabase.query_counter = 0
+        SQLiteDatabase.contributed_records = []
 
     def setup_relations(self):
         from fields import AbstractRelationField
@@ -79,11 +87,10 @@ class Database(object):
                 if issubclass(v.__class__, AbstractRelationField):
                     v.setup_relation(rec)
 
-
     def create_tables(self):
         """Check for all 'cls', if we need to create the needed table"""
         
-        # finally create all tables inside the database
+        # finally create all tables inside the SQLiteDatabase
         for rec in self.contributed_records:             
             # there is no 'show tables' sql-statement in sqlite so query sqlite_master
             q = "SELECT * FROM sqlite_master WHERE type='table' AND tbl_name='{}'".format(rec.table)
@@ -96,7 +103,7 @@ class Database(object):
             ## here we haven't found the table
             # first check for field-number > 0
             if len(rec.base_fields) == 0:
-                raise DatabaseError("Could not create table: {}, no fields!". \
+                raise SQLiteDatabaseError("Could not create table: {}, no fields!". \
                         format(rec.table))
 
             # actually build creation of table-query 
@@ -118,20 +125,20 @@ class Database(object):
         self.query_counter += 1
                
         with self.lock:
-            if Database.db_con is None:
-                Database.db_con = sqlite.connect(Database.db_file)
+            if SQLiteDatabase.db_con is None:
+                SQLiteDatabase.db_con = sqlite.connect(SQLiteDatabase.db_file)
             
             # to return a dict for each row
-            Database.db_con.row_factory = sqlite.Row
+            SQLiteDatabase.db_con.row_factory = sqlite.Row
             
             # to auto-commit
-            Database.db_con.isolation_level = None
+            SQLiteDatabase.db_con.isolation_level = None
             
             ### text-encoding 
             #self.db_con.text_factory = sqlite.OptimizedUnicode
-            Database.db_con.text_factory = unicode
+            SQLiteDatabase.db_con.text_factory = unicode
             
-            self.cursor = Database.db_con.cursor()
+            self.cursor = SQLiteDatabase.db_con.cursor()
             self.cursor.execute(q, args)
             self.lastrowid = self.cursor.lastrowid
 
@@ -148,12 +155,13 @@ class Database(object):
         q = "SELECT rowid FROM {} WHERE rowid=?".format(obj.table)
         
         # determine action (act) - either "update" or "insert"
-        act = "update" if obj.rowid and self.query(q, (obj.rowid,)) else "insert"
+        #act = "update" if obj.rowid and self.query(q, (obj.rowid,)) else "insert"
+        act = "update" if obj.rowid else "insert"
         
         # prepare all fields to be saved using Field::pre_save()
         for attr in obj.fields:
             if not obj.fields[attr].pre_save(action=act, obj=obj):
-                raise DatabaseError("Field::pre_save() for field '{}' with value '{}' failed". \
+                raise SQLiteDatabaseError("Field::pre_save() for field '{}' with value '{}' failed". \
                         format(attr, getattr(obj, attr)))
      
         # collect data (omit empty-fields, pseudo-fields)
@@ -185,25 +193,25 @@ class Database(object):
         # postprocess fields using Field::post_save()
         for attr in obj.fields:
             if not obj.fields[attr].post_save(action=act, obj=obj):
-                raise DatabaseError("Field::post_save() for field '{}' with value '{}' failed". \
+                raise SQLiteDatabaseError("Field::post_save() for field '{}' with value '{}' failed". \
                         format(attr, getattr(obj, attr)))
         return ret
             
     def delete_obj(self, obj):
-        """Delete given object from the database"""
+        """Delete given object from the SQLiteDatabase"""
 
         q = "DELETE FROM {} WHERE rowid=?".format(obj.table)
         return self.query(q, (obj.rowid,))
         
     def filter(self, cls, operator="=", limit=None, order_by=None, **kw):
         """Return instances of 'cls' according to given values in 'kw' from
-        the Database 
+        the SQLiteDatabase 
         """
        
         # check if the passed keywords exist as field
         all_fields = cls.base_fields.keys() + ["rowid"]
         if any(not k in all_fields for k in kw):
-            raise DatabaseError(".filter got a non-field keyword (one of: {}), instead of one of: '{}'". \
+            raise SQLiteDatabaseError(".filter got a non-field keyword (one of: {}), instead of one of: '{}'". \
                     format(", ".join(kw.keys()), ", ".join(all_fields)))
                      
         # postprocess the query keywords
@@ -232,7 +240,7 @@ class Database(object):
         # --- ORDER BY
         if order_by:
             if any(not x.strip("+-") in all_fields for x in order_by):
-                raise DatabaseError("'order by' contains non field keys: {}, availible are only: {}". \
+                raise SQLiteDatabaseError("'order by' contains non field keys: {}, availible are only: {}". \
                         format(", ".join(order_by), ", ".join(all_fields)) )
         
             q += " ORDER BY {}".format(
@@ -245,16 +253,10 @@ class Database(object):
         
         vals = [x for x in kw.values() if x is not None] if kw else []      
         return [cls(**kw) for kw in self.query(q, vals)]
-    
-    def exclude(self, cls, **kw):
-        """Return instances which DON'T match the 
-        keyword -> value combination from kw"""
 
-        return self.filter(cls, operator="<>", **kw)
-    
 class DataManager(object):
     """Object managing class placed as AnyRecord.objects"""
-    def __init__(self, rec, pre_filter={}, order_by=None, limit=None):
+    def __init__(self, rec, pre_filter={}, order_by=None, limit=None, op_mode=None):
         self.record = rec
         self.pre_filter = pre_filter
 
@@ -264,8 +266,11 @@ class DataManager(object):
         # limit must be a tuple of 2 elements
         self.limit = limit
 
+        # op_mode may be "db", "local", "both"
+        self.op_mode = op_mode or "both"
+
     def __repr__(self):
-        return "<%s DataManager>" % self.record.__name__
+        return "<{} DataManager>".format(self.record.__name__)
 
     def __getitem__(self, key):
         """Behave like a list of objects, 'key' is a non-database/result-only related up counting index"""
@@ -279,12 +284,30 @@ class DataManager(object):
 
         return self.record.database.filter(self.record, limit=(key,1))[0]
     
+    def store(self, owner, obj):
+        """here store temporary objects"""
+        
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        """here store temporary objects"""
+        pass
+
     def all(self):
-        """Return all Record objects from the database"""
+        """Return all Record objects from the SQLiteDatabase"""
         return self.record.database.filter(self.record)
 
     def filter(self, **kw):
-        """This is the access method to all rows aka objects from the database.
+        """This is the access method to all rows aka objects from the SQLiteDatabase.
         use like this: 
         MyRecord.objects.filter(some_field="bar", other_field="foo")
         """
@@ -299,12 +322,12 @@ class DataManager(object):
 
         try:
             return self.get(**kw)
-        except DatabaseError as e:
+        except SQLiteDatabaseError as e:
             return None
 
     def get(self, **kw):
         """Returns exactly one object if found or None. 
-        raises an DatabaseError, if more than one is found
+        raises an SQLiteDatabaseError, if more than one is found
         """
 
         ret = self.all() if len(kw) == 0 else self.filter(**kw)
@@ -312,7 +335,7 @@ class DataManager(object):
         if len(ret) == 1:
             return ret[0]
         elif len(ret) > 1:
-            raise DatabaseError("Got more than one row from: {}".format(kw))
+            raise SQLiteDatabaseError("Got more than one row from: {}".format(kw))
         
         # not found - return None
         return None
@@ -323,7 +346,7 @@ class DataManager(object):
 
     def exclude(self, **kw):
         """Exclude the objects with match the keyword -> value combination passed"""
-        return self.record.database.exclude(self.record, **kw)
+        return self.filter(cls, operator="<>", **kw)
 
     def create_or_get(self, **kw):
         """'kw' requires at least one table-unique column/keyword.

@@ -30,6 +30,16 @@ class FieldExpressionTestSuite(unittest.TestCase):
             self.assertTrue(f1.eval() == o(x, y), "failed: {}, ref: {}". \
                     format(o.__name__, o(x, y)))
 
+    def test_partly_evaluation(self):
+        x, y = 123, "varname"
+        f1 = FieldExpression(x, y, ops.add)
+        f2 = f1.eval()
+        self.assertTrue(isinstance(f1.eval(), FieldExpression))
+        self.assertTrue(f1.to_string() == "123 + varname")
+        f1.context["varname"] = 313
+        self.assertTrue(isinstance(f1.eval(), int))
+        self.assertTrue(f1.eval() == 436)
+
     def test_multi_level(self):
         x, y, z = 423, 324, 321
         f1 = FieldExpression(x, y, ops.add)

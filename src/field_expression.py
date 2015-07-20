@@ -26,7 +26,8 @@ class FieldExpression(object):
 
     operator_one_arg = set((len, operator.inv))
 
-    def __init__(self, arg1, arg2=None, op=None, obj1=None, obj2=None):
+    def __init__(self, arg1, arg2=None, op=None, obj1=None, obj2=None, context=None):
+        self.context = context or {}
         self.arg1 = arg1 
         self.arg2 = arg2 
 
@@ -36,7 +37,7 @@ class FieldExpression(object):
                 "'{}' not an legal operator".format(op))
         
         # 2 args, but 'op' is just for a single
-        if self.arg2 is None and op in self.operator_one_arg:
+        if self.arg2 is not None and op in self.operator_one_arg:
             raise FieldExpressionError(
                 "'{}' operation takes only ONE argument, found two...".\
                         format(op.__name__))
@@ -54,31 +55,41 @@ class FieldExpression(object):
 
         self.op = op 
 
-        # only used, if arg(s) are Field-objects
+        # only used, if arg(s) are (Base)Field(s)
         self.obj1 = obj1
         self.obj2 = obj2
 
-    def _prepare_arg(self, arg, obj, recurse=None):
+    def _prepare_arg(self, arg, obj, recurse=None, apply_ctx=True):
         from fields import AbstractField 
 
         # arg == FieldExpression (recurse)
         if isinstance(arg, FieldExpression):
             return recurse(arg)
         
+        ### context AND field specilization is too much, 
+        ### include field into context TODO FIXME
         # arg == AbstractField
         elif isinstance(arg, AbstractField):
-            if not isinstance(obj, arg):
-                raise FieldExpressionError() 
-            return getattr(obj, arg.name)
+            if apply_ctx:
+                if not isinstance(obj, arg):
+                    raise FieldExpressionError() 
+                return getattr(obj, arg.name)
+            else:
+                return obj.name + "." + arg.name
+            
+        # arg in self.context
+        elif arg in self.context:
+            return self.context[arg] if apply_ctx else arg
         
         # arg == others
         else:
             return arg
 
-    def eval(self, obj1=None, obj2=None):
+    def eval(self, obj1=None, obj2=None, context=None):
         # passed directly get precendence, if applicable
         self.obj1 = obj1 or self.obj1
         self.obj2 = obj2 or self.obj2 
+        self.context.update(context or {})
 
         visitor = lambda x: x.eval()
         # prepare arg1
@@ -87,26 +98,33 @@ class FieldExpression(object):
         if self.arg2 is not None:
             arg2 = self._prepare_arg(self.arg2, self.obj2, visitor)
 
-        # apply operation and return!
-        if self.arg2 is None:
-            # 'arg1' may be alone and without 'op'
-            if self.op is None:
-                return arg1 
-            return self.op(arg1)
-        else:
-            return self.op(arg1, arg2)
-
-    def to_string(self, obj1=None, obj2=None):
+        # try applying operation and return!
+        try:
+            if self.arg2 is None:
+                # 'arg1' may be alone and without 'op'
+                if self.op is None:
+                    return arg1 
+                return self.op(arg1)
+            else:
+                return self.op(arg1, arg2)
+        except TypeError as e:
+            # trying operation on incompatible types -> unresolved symbol
+            # returning partly-evaluated FieldExpression-clone instead!
+            return FieldExpression(arg1, arg2, self.op, self.obj1, self.obj2, self.context)
+                                   
+    def to_string(self, obj1=None, obj2=None, context=None, apply_ctx=False):
         # passed directly get precendence, if applicable
         self.obj1 = obj1 or self.obj1
         self.obj2 = obj2 or self.obj2 
+        self.context.update(context or {})
 
         visitor = lambda x: "(" + x.to_string() + ")"
+        
         # prepare arg1
-        arg1 = self._prepare_arg(self.arg1, self.obj1, visitor)
+        arg1 = self._prepare_arg(self.arg1, self.obj1, visitor, apply_ctx=apply_ctx)
         # prepare arg2
         if self.arg2 is not None:
-            arg2 = self._prepare_arg(self.arg2, self.obj2, visitor)
+            arg2 = self._prepare_arg(self.arg2, self.obj2, visitor, apply_ctx=apply_ctx)
 
         # get string-template, format and return
         tmpl = self.operator_map.get(self.op)

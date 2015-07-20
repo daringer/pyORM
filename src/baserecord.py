@@ -2,7 +2,7 @@
 #-*- coding: utf-8 -*-
 
 
-from core import DatabaseError, DataManager, Database
+from core import DatabaseError, DataManager, SQLiteDatabase, MemoryDatabase
 
 __metaclass__ = type
 
@@ -85,7 +85,7 @@ class MetaBaseRecord(type):
             #            IDField(name="rowid", unique=True, primary_key=True))
             
             # init database instance for this class
-            cls.database = Database()
+            cls.database = SQLiteDatabase()
             cls.database.contribute(cls)
             
             # populate cls.objects 
@@ -102,35 +102,26 @@ class BaseRecord(object):
         # no starting underscore "_" in fieldname
         assert not name.startswith("_"), \
             "fieldnames starting with an underscore '_' are not allowed!"
+        
         # reserved keywords, catch...
-        #assert not name in ["fields", "relations", "table"], \
-        assert not name in ["fields", "table"], \
+        assert not name in ["fields", "table", "dirty"], \
             "'{}' is not allowed as field name".format(name)
 
-        #print "setting up field: ", name, field, " in ", cls
         field.name = name
         cls.base_fields[name] = field.clone()
         
-        #print cls.base_fields 
         if hasattr(cls, name):
             delattr(cls, name)
 
     def __init__(self, **kw):
         # copy class base_fields to instanc:e
         self.fields = {}
-        #self.relations = {}
         
         from fields import ManyToOneRelation, OneToOneRelation, ManyToManyRelation 
 
-
         for name, field in self.__class__.base_fields.items():
-            #self.add_field(field, name)
             # all fields are inserted here:
             self.fields[name] = field.clone()
-
-            # fields resembling a relation, additionally here:
-            #if issubclass(field, AbstractRelationField):
-            #    self.relations[name] = relation_wrapper_factory(field.
 
         # if there is some keyword-argument, that is not handled by the record, throw exception
         for key in kw:
@@ -144,7 +135,9 @@ class BaseRecord(object):
         for name, field in self.fields.items():
             field.parent = self
         
-
+        # is this record-obj 'dirty' (has been changed since last save())
+        self.dirty = True
+        
         # process each defined field
         self.rowid = None
         self.found_primary_key = False 
@@ -167,10 +160,10 @@ class BaseRecord(object):
             #    raise TypeError("Cannot set 1:N relation...")
             #
             # relation-field -> N:1
-            elif issubclass(field.__class__, ManyToOneRelation):
+            #elif issubclass(field.__class__, ManyToOneRelation):
                 #rid = v if isinstance(v, int) else v.rowid
                 #field.set(field.related_record.objects.get(rowid=rid))
-                field.set(v)
+            #    field.set(v)
 
             # relation-field -> 1:1
             #elif issubclass(field.__class__, OneToOneRelation):
@@ -179,8 +172,8 @@ class BaseRecord(object):
             #    field.set(v)
 
             # relation-field -> N:M
-            elif issubclass(field.__class__, ManyToManyRelation):
-                raise DatabaseError("NOT IMPLEMENTED: ManyToManyRelation")
+            #elif issubclass(field.__class__, ManyToManyRelation):
+            #    raise DatabaseError("NOT IMPLEMENTED: ManyToManyRelation")
 
             # unique-identifier field 
             # (overwritten by user-defined Field, if inside this branch)
@@ -193,12 +186,21 @@ class BaseRecord(object):
             else:
                 field.set(v)
 
-    # yes save... means WHAT? save all containing items, too???                
+    # yes save... 
     def save(self):
         """Save object in database"""
+        from fields import AbstractRelationField
+        # check, if any related fields must be saved before
+        #for name, f in self.fields.items():
+        #    if isinstance(f, AbstractRelationField) and self.get(a
+        #        if f.dirty:
+        #            f.save()
+                
+        # save me!!!
         ret = self.database.save_obj(self)
         if self.database.lastrowid:
             self.rowid = self.database.lastrowid
+        self.dirty = False
         return ret
 
     def destroy(self):
@@ -208,8 +210,13 @@ class BaseRecord(object):
     def __iter__(self):
         """Iterator that returns (name, value) for this object"""
         for f in ["rowid"] + self.fields.keys():
-            yield (f, getattr(self, f))
-
+            fobj = getattr(self, f)
+            
+            if isinstance(fobj, BaseRecord):
+                yield (f, "REF")
+            else:
+                yield (f, fobj)
+            
     def __repr__(self):
         """Should show the INSTANCE attributes, and omit the class/field ones"""
         field_maxlen = 6
@@ -220,22 +227,18 @@ class BaseRecord(object):
                     )) for k, v in self]
         return "<{} {}>".format(
                 self.__class__.__name__, 
-                #" ".join(("{}={}".format(l.encode("utf-8") \
-                # if hasattr(l, "encode") else "<None>", r.encode("utf-8") \
-                # if hasattr(r, "encode") else "<None>") for l, r in data))
-                " ".join(("{}=<{}>".format(l, r[:field_maxlen] + "..." \
-                    if isinstance(r, (str, unicode)) and len(r) > field_maxlen \
-                    else r) for l, r in data))
+                " ".join(("{}=<{}>".format(k, v) for k, v in data))
             )
 
     # access field-contents
     def get(self, key):
         if key in self.__class__.base_fields:
             return self.fields[key].get()
-        raise AttributeError("The attribute with the name: '{}' does not exist".format(key))
+        raise AttributeError("The attr with the name: '{}' does not exist".format(key))
     
     def set(self, key, val):
         if key in self.__class__.base_fields:
+            self.dirty = True
             self.fields[key].set(val)
             return 
         object.__setattr__(self, key, val)
@@ -243,6 +246,7 @@ class BaseRecord(object):
     # to access the fields in the record as they were regular attributes
     def __getattr__(self, key):
         return self.get(key)
+    
     # and set them as if they were attributes...
     def __setattr__(self, key, val):
         return self.set(key, val)
