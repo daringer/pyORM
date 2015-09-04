@@ -4,7 +4,7 @@ import unittest
 
 import operator as ops
 
-sys.path.append("../src/")
+sys.path.append("..")
 
 from baserecord import BaseRecord
 from fields import StringField, IntegerField, DateTimeField, \

@@ -3,7 +3,7 @@ import os, sys
 import time 
 import unittest 
 
-sys.path.append("../src/")
+sys.path.append("..")
 
 from baserecord import BaseRecord
 from fields import StringField, IntegerField, DateTimeField, \
