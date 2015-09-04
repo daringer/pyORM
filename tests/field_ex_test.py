@@ -6,11 +6,11 @@ import operator as ops
 
 sys.path.append("../src/")
 
-#from baserecord import BaseRecord
-#from fields import StringField, IntegerField, DateTimeField, \
-#        OneToManyRelation, FloatField, OptionField, ManyToOneRelation, \
-#        ManyToManyRelation
-#from core import Database
+from baserecord import BaseRecord
+from fields import StringField, IntegerField, DateTimeField, \
+        OneToManyRelation, FloatField, OptionField, ManyToOneRelation, \
+        ManyToManyRelation
+from core import Database
 
 from field_expression import FieldExpression 
 

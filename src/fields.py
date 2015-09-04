@@ -435,14 +435,24 @@ class OneToOneRelation(AbstractRelationField, IntegerField):
                 OneToOneBackrefRelation(record, name=self.backref, backref=self.name))
 
 
-
+# n-to-n relation, spawns a new table and fields in both related tables
 class ManyToManyRelation(AbstractRelationField):
+    def __init__(self, rel_record, backref, **kw):
+        super(AbstractRelationField, self).__init__(rel_record, backref=backref, **kw)
+
+        # allow additional fields in extra n2n table
+
     def get(self):
         return self._value
 
     def set(self):
         self._value = val
 
+    def setup_relation(self, record):
+        pass 
+
+        # spawn table (with additional fields)
+        # setup_fields in both tables!
 
 ##### the object-based interface - to be done, but explicit!!!
 ##### - means no in-transparent "magic" to 
