@@ -9,7 +9,48 @@ from fields import StringField, IntegerField, DateTimeField, \
 from core import SQLiteDatabase, MemoryDatabase
 
 sys.path.append("..")
-from point3d import Point3D, Coord, Vector
+
+class Point3D:
+    """Keeps a 3D point/vector (abstract)"""
+    def __init__(self, x=None, y=None, z=None, scale=None):
+        if scale is None:
+            self.x = x
+            self.y = y
+            self.z = z
+        else:
+            self.x = x * scale
+            self.y = y * scale
+            self.z = z * scale
+
+    def trans(self, matrix):
+        """Transform based on 4x4 matrix"""
+        raise NotImplementedError()
+
+    def __repr__(self):
+        return "{}({}, {}, {})".format(self.__class__.__name__,
+                self.x , self.y, self.z)
+
+class Vector(Point3D):
+    """Specialization of Point3D for vectors"""
+    def trans(self, matrix, scale=None):
+        if scale is None:
+            return Vector(*np.dot(matrix[0:3, 0:3], 
+                np.array([self.x, self.y, self.z]))[:3])
+        return Vector(*np.dot(matrix[0:3, 0:3], 
+            np.array([self.x*scale, self.y*scale, self.z*scale]))[:3])
+    def angle_to(self, other):
+        return math.acos((self.x*other.x+self.y*other.y+self.z*other.z) / 
+               (math.sqrt(self.x*self.x+self.y*self.y+self.z*self.z) *
+                math.sqrt(other.x*other.x+other.y*other.y+other.z*other.z)))
+
+class Coord(Point3D):
+    """Specialization of Point3D for coordinates"""
+    def trans(self, matrix, scale=None):
+        if scale is None:
+            return Coord(*np.dot(matrix, 
+                np.array([self.x, self.y, self.z, 1.0]))[:3])
+        return Coord(*np.dot(matrix, 
+            np.array([self.x*scale, self.y*scale, self.z*scale, 1.0]))[:3])
 
 ## easy assembling field groups to wrap any data-type
 class Point3DFieldGroup(BaseFieldGroup):
@@ -26,6 +67,21 @@ class Vector3DFieldGroup(Point3DFieldGroup):
 
 class Coord3DFieldGroup(Point3DFieldGroup):
     cls = Coord
+
+class MultiLevelData:
+    def __init__(self):
+        self.pos = Coord()
+        self.direction = Vector()
+        self.info = ""
+
+class MultiLevelFieldGroup(BaseFieldGroup):
+    cls = MultiLevelData
+    cls_ctor_args = {}
+    key2field = {
+        "pos": Coord3DFieldGroup(),
+        "direction": Vector3DFieldGroup(),
+        "info": StringField(size=200)
+    }
 
 # now the declaritive DB models
 class Author(BaseRecord):
@@ -53,7 +109,7 @@ class HeadTrackData(BaseRecord):
     pos = Coord3DFieldGroup()
     direction = Vector3DFieldGroup()
     author = OneToOneRelation(Author, backref="het")
-
+    multi = MultiLevelFieldGroup()
 
 
 # declare a view-model providing all books 
@@ -128,9 +184,15 @@ b2.save()
 print len(a1.books)
 
 # field group to transparently put any datastructure inside the db
+m = MultiLevelData()
+m.pos = Coord(24,21,43)
+m.direction = Vector(23,23,42)
+m.info = "Man is des scharf!"
+
 head_track = HeadTrackData(pos=Coord(1,2,4), 
                            direction=Vector(4,2,5), 
-                           author=a2)
+                           author=a2,
+                           multi=m)
 head_track.save()
 
 print "head tracking data, saved---printing:"
@@ -138,5 +200,7 @@ print "rowid", head_track.rowid
 print "pos", head_track.pos
 print "dir", head_track.direction 
 print "author", head_track.author
+m = head_track.multi
+print "multi-depth", m.pos, m.direction, m.info
 
 db.close()
