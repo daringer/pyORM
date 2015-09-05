@@ -100,6 +100,8 @@ class SQLiteDatabase(BaseDatabase):
             
             # table was found - skip creation...
             if len(res) == 1:
+                if self.debug:
+                    print "[i] table: {} exists---skipping...".format(rec.table)
                 continue
 
             ## here we haven't found the table
@@ -108,7 +110,7 @@ class SQLiteDatabase(BaseDatabase):
                 raise SQLiteDatabaseError("Could not create table: {}, " + \
                         "no fields!".format(rec.table))
 
-            # actually build creation of table-query 
+            # actual creation of create-table-query 
             q = "CREATE TABLE {} ({})". \
                     format(rec.table, ", ".join(x.get_create() \
                         for x in rec.base_fields.values() \
@@ -151,7 +153,8 @@ class SQLiteDatabase(BaseDatabase):
         return out
            
     def save_obj(self, obj):
-        """Either insert the object if "rowid" is found in table,
+        """
+        Either insert the object if "rowid" is found in table,
         or update if rowid if found in the table
         """
         
@@ -219,24 +222,28 @@ class SQLiteDatabase(BaseDatabase):
         # check if the passed keywords exist as field
         all_fields = cls.base_fields.keys() + ["rowid"]
         if any(not k in all_fields for k in kw):
-            raise SQLiteDatabaseError(".filter got a non-field keyword (one of: {}), instead of one of: '{}'". \
+            raise SQLiteDatabaseError(".filter got a non-field keyword " + \
+                    "(one of: {}), instead of one of: '{}'". \
                     format(", ".join(kw.keys()), ", ".join(all_fields)))
                      
         # postprocess the query keywords
-        from fields import ManyToOneRelation
+        from fields import ManyToOneRelation as n2n_relation
         from baserecord import BaseRecord
         for k, v in kw.items():
-            if k in cls.base_fields and isinstance(cls.base_fields[k], ManyToOneRelation):
+            if k in cls.base_fields \
+                  and isinstance(cls.base_fields[k], n2n_relation):
                 kw[k] = v.rowid 
-                    # if v else None <- no!, something like a rowid always exists!
-                    # this MUST be true for all Fields in cls::base_fields
+                # if v else None <- no!, a rowid always exists!
+                # this MUST be true for all Fields in cls::base_fields
         
         # use 'kw'-dict as WHERE CLAUSE
         if kw:
-            # uhu ugly-magic, actually just replacing the operator with "IS NULL" if the kw value is None
+            # uhu ugly-magic, actually just replacing the operator 
+            # with "IS NULL" if the kw value is None
             where = " AND ".join("{}{}". \
-                    format(k, (operator + "?" if v is not None else " IS NULL")) \
-                    for k, v in kw.items()
+                format(k, (operator + "?" if v is not None \
+                    else " IS NULL")) \
+                for k, v in kw.items()
             )
             
             q = "SELECT rowid, * FROM {} WHERE {}".format(cls.table, where)
@@ -268,7 +275,8 @@ class DataManager(object):
         self.record = rec
         self.pre_filter = pre_filter
 
-        # order_by must be a tuple of fieldnames with a leading "+" or "-", no operator implies "+"
+        # order_by must be a tuple of fieldnames with a leading "+" or "-", 
+        # no operator implies "+"
         self.order_by = order_by
 
         # limit must be a tuple of 2 elements
@@ -281,7 +289,10 @@ class DataManager(object):
         return "<{} DataManager>".format(self.record.__name__)
 
     def __getitem__(self, key):
-        """Behave like a list of objects, 'key' is a non-database/result-only related up counting index"""
+        """
+        Behave like a list of objects, 'key' is a non-database/result-only 
+        related up counting index
+        """
 
         # implement slicing! TODO FIXME
         if not isinstance(key, (int, long)):
@@ -315,8 +326,9 @@ class DataManager(object):
         return self.record.database.filter(self.record)
 
     def filter(self, **kw):
-        """This is the access method to all rows aka objects from the SQLiteDatabase.
-        use like this: 
+        """
+        This is the access method to all rows a.k.a. objects from the 
+        SQLiteDatabase. use like this: 
         MyRecord.objects.filter(some_field="bar", other_field="foo")
         """
 
@@ -324,7 +336,8 @@ class DataManager(object):
         return self.record.database.filter(self.record, **kw)
 
     def one(self, **kw):
-        """Returns exactly one item, if appropriate. 
+        """
+        Returns exactly one item, if appropriate. 
         Does not throw Exception on error, simply return 'None'
         """
 
@@ -334,7 +347,8 @@ class DataManager(object):
             return None
 
     def get(self, **kw):
-        """Returns exactly one object if found or None. 
+        """
+        Returns exactly one object if found or None. 
         raises an SQLiteDatabaseError, if more than one is found
         """
 
@@ -343,7 +357,8 @@ class DataManager(object):
         if len(ret) == 1:
             return ret[0]
         elif len(ret) > 1:
-            raise SQLiteDatabaseError("Got more than one row from: {}".format(kw))
+            raise SQLiteDatabaseError("Got more than one row from: {}". \
+                    format(kw))
         
         # not found - return None
         return None
@@ -353,11 +368,12 @@ class DataManager(object):
         return self.one(**kw) is not None
 
     def exclude(self, **kw):
-        """Exclude the objects with match the keyword -> value combination passed"""
+        """Exclude the objects with match the keyword -> value combi passed"""
         return self.filter(cls, operator="<>", **kw)
 
     def create_or_get(self, **kw):
-        """'kw' requires at least one table-unique column/keyword.
+        """
+        'kw' requires at least one table-unique column/keyword.
         returns the found object, if it is found, or
         returns a fresh created (and saved) object with given data
         """
