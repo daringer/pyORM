@@ -1,28 +1,45 @@
 import os, sys
 import time 
 
-sys.path.append("src/")
-
 from baserecord import BaseRecord
 #from baseview import BaseView
 from fields import StringField, IntegerField, DateTimeField, \
         FloatField, OptionField, ManyToOneRelation, \
-        ManyToManyRelation, OneToOneRelation
+        ManyToManyRelation, OneToOneRelation, BaseFieldGroup
 from core import SQLiteDatabase, MemoryDatabase
 
-# first the declaritive model 
+sys.path.append("..")
+from point3d import Point3D, Coord, Vector
+
+## easy assembling field groups to wrap any data-type
+class Point3DFieldGroup(BaseFieldGroup):
+    cls = Point3D 
+    cls_ctor_args = ()
+    key2field = {
+        "x": FloatField(),
+        "y": FloatField(), 
+        "z": FloatField()
+    }
+
+class Vector3DFieldGroup(Point3DFieldGroup):
+    cls = Vector
+
+class Coord3DFieldGroup(Point3DFieldGroup):
+    cls = Coord
+
+# now the declaritive DB models
 class Author(BaseRecord):
     name = StringField(size=50)
     family_name = StringField(size=50)
     avail_since = DateTimeField(auto_now_add=True)
     birthday = DateTimeField()
-    
+
 class Address(BaseRecord):
     author = OneToOneRelation(Author, backref="address")
     city = StringField(size=100)
     street = StringField(size=100)
     street_no = IntegerField()
-    postal_code = IntegerField()    
+    postal_code = IntegerField()   
 
 class Book(BaseRecord):
     title = StringField(size=300)
@@ -31,6 +48,13 @@ class Book(BaseRecord):
     abstract = StringField(size=1000)
     isbn = StringField(size=50)
     author = ManyToOneRelation(Author, backref="books")
+
+class HeadTrackData(BaseRecord):
+    pos = Coord3DFieldGroup()
+    direction = Vector3DFieldGroup()
+    author = OneToOneRelation(Author, backref="het")
+
+
 
 # declare a view-model providing all books 
 #class LivingInHanau(BaseView):
@@ -103,6 +127,13 @@ b2.save()
 # fine backref + 1:N + N:1 works good
 print len(a1.books)
 
+head_track = HeadTrackData(pos=Point3D(1,2,4), 
+                           direction=Point3D(4,2,5), 
+                           author=a2)
 
+print "#####", head_track.pos
+head_track.save()
+
+print head_track.pos
 
 db.close()

@@ -16,7 +16,7 @@ class BaseDatabase(object):
     query_counter = 0
 
     # set to 'True' to get all plaintext sql-queries in 'stdout'
-    debug = False
+    debug = True
     
     # mmmh, system wide list of contributing records?! 
     contributed_records = []
@@ -92,8 +92,10 @@ class SQLiteDatabase(BaseDatabase):
         
         # finally create all tables inside the SQLiteDatabase
         for rec in self.contributed_records:             
-            # there is no 'show tables' sql-statement in sqlite so query sqlite_master
-            q = "SELECT * FROM sqlite_master WHERE type='table' AND tbl_name='{}'".format(rec.table)
+            # there is no 'show tables' sql-statement in sqlite,
+            # so query sqlite_master
+            q = "SELECT * FROM sqlite_master WHERE type='table' AND " + \
+                    "tbl_name='{}'".format(rec.table)
             res = self.query(q)
             
             # table was found - skip creation...
@@ -103,8 +105,8 @@ class SQLiteDatabase(BaseDatabase):
             ## here we haven't found the table
             # first check for field-number > 0
             if len(rec.base_fields) == 0:
-                raise SQLiteDatabaseError("Could not create table: {}, no fields!". \
-                        format(rec.table))
+                raise SQLiteDatabaseError("Could not create table: {}, " + \
+                        "no fields!".format(rec.table))
 
             # actually build creation of table-query 
             q = "CREATE TABLE {} ({})". \
@@ -115,7 +117,8 @@ class SQLiteDatabase(BaseDatabase):
             self.query(q)
        
     def query(self, q, args=()):
-        """Actually performing a query. Replace variables in 'q' with "?" and
+        """
+        Actually performing a query. Replace variables in 'q' with "?" and
         pass the variables in the second argument 'args' as tupel
         """
         
@@ -142,7 +145,8 @@ class SQLiteDatabase(BaseDatabase):
             self.cursor.execute(q, args)
             self.lastrowid = self.cursor.lastrowid
 
-            out = self.cursor.fetchall() if q.lower().startswith("select") else True            
+            out = self.cursor.fetchall() if q.lower().startswith("select") \
+                    else True            
 
         return out
            
@@ -152,23 +156,24 @@ class SQLiteDatabase(BaseDatabase):
         """
         
         # does it already exist ? DOIN' NOTHIN' HERE!!!!!??!
-        q = "SELECT rowid FROM {} WHERE rowid=?".format(obj.table)
+        #q = "SELECT rowid FROM {} WHERE rowid=?".format(obj.table)
         
         # determine action (act) - either "update" or "insert"
-        #act = "update" if obj.rowid and self.query(q, (obj.rowid,)) else "insert"
+        #act = "update", if obj.rowid and self.query(q, (obj.rowid,)) else "insert"
         act = "update" if obj.rowid else "insert"
         
         # prepare all fields to be saved using Field::pre_save()
         for attr in obj.fields:
             if not obj.fields[attr].pre_save(action=act, obj=obj):
-                raise SQLiteDatabaseError("Field::pre_save() for field '{}' with value '{}' failed". \
+                raise SQLiteDatabaseError("Field::pre_save() for field " + \
+                        "'{}' with value '{}' failed". \
                         format(attr, getattr(obj, attr)))
      
         # collect data (omit empty-fields, pseudo-fields)
+
         attr_vals = [{"col": k, "val": v.get_save()} \
                 for k, v in obj.fields.items() \
                     if v.get_save() is not None]
-
         # replace BaseRecord descendants with their .rowid 
         from baserecord import BaseRecord
         for i in xrange(len(attr_vals)):
@@ -180,12 +185,14 @@ class SQLiteDatabase(BaseDatabase):
         if act == "update":
             fields = ",".join((x["col"] + "=?") for x in attr_vals)
             #fields = ", ".join("{}=?".format(x["col"] for x in attr_vals))
-            q = "UPDATE {} SET {} WHERE rowid={}".format(obj.table, fields, obj.rowid)
+            q = "UPDATE {} SET {} WHERE rowid={}". \
+                    format(obj.table, fields, obj.rowid)
         # --- INSERT
         elif act == "insert":
             fields = ",".join(x["col"] for x in attr_vals)
             vals = ",".join(["?"] * len(attr_vals))
-            q = "INSERT INTO {} ({}) VALUES ({})".format(obj.table, fields, vals)
+            q = "INSERT INTO {} ({}) VALUES ({})". \
+                    format(obj.table, fields, vals)
         
         # executing constructed sql-query
         ret = self.query(q, [x["val"] for x in attr_vals])    
@@ -193,7 +200,8 @@ class SQLiteDatabase(BaseDatabase):
         # postprocess fields using Field::post_save()
         for attr in obj.fields:
             if not obj.fields[attr].post_save(action=act, obj=obj):
-                raise SQLiteDatabaseError("Field::post_save() for field '{}' with value '{}' failed". \
+                raise SQLiteDatabaseError("Field::post_save() for field " + \
+                        "'{}' with value '{}' failed". \
                         format(attr, getattr(obj, attr)))
         return ret
             

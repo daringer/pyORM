@@ -56,47 +56,58 @@ class MetaBaseRecord(type):
     def __init__(cls, name, bases, dct):
         
         # exclude the base class from this behaviour
-        if not name == "BaseRecord":                
-            cls.table = name.lower()
-            
-            # move all "*Fields" to self.fields 
-            cls.base_fields = {}
-            for att in cls.__dict__.keys()[:]:
-                
-                # check for minimal field name length (> 2)
-                if len(att) < 2:
-                    raise DatabaseError("For __reasons unknown__ field names must have at least 2 chars")
-
-                # identify and setup fields inside this record
-                field = getattr(cls, att)
-                from fields import AbstractField
-                if issubclass(field.__class__, AbstractField):
-                    cls.setup_field(att, field)
+        #if not name == "BaseRecord":                
+        if object in bases:
+            return
         
-            # this does not behave as expected inside sqlite3 
-            # - rowid named col needs AUTOINC, which sux (performance)
-            # - so omit this and use built-in rowid, 
-            #   which works nicely except for the unintuitive interface (select rowid, * ...)
-            #
-            # if there is no explicit column named: 'rowid', create one as primary_key!!!
-            #if "rowid" not in cls.base_fields:
-            #    from fields import IDField
-            #    cls.setup_field("rowid", 
-            #            IDField(name="rowid", unique=True, primary_key=True))
+        cls.table = name.lower()
+        
+        # move all "*Fields" to self.fields 
+        cls.base_fields = {}
+        for att in cls.__dict__.keys()[:]:
             
-            # init database instance for this class
-            cls.database = SQLiteDatabase()
-            cls.database.contribute(cls)
-            
-            # populate cls.objects 
-            cls.objects = DataManager(cls)
+            # check for minimal field name length (> 2)
+            if len(att) < 2:
+                raise DatabaseError("For __reasons unknown__ field " + \
+                                    "names must have at least 2 chars")
+ 
+            # identify and setup fields inside this record
+            field = getattr(cls, att)
+            from fields import AbstractField, BaseFieldGroup
+            if issubclass(field.__class__, AbstractField):
+                cls.setup_field(att, field)
+
+            elif issubclass(field.__class__, BaseFieldGroup):
+                cls.setup_field(att, field, field_group=True)
+
+                for sub_field_key, sub_field in field._fields.items():
+                    cls.setup_field(att + "__" + sub_field_key, sub_field, 
+                            sub_field=True)
+        #print cls.base_fields
+        # this does not behave as expected inside sqlite3 
+        # - rowid named col needs AUTOINC, which sux (performance)
+        # - so omit this and use built-in rowid, 
+        #   which works nicely except for the unintuitive interface (select rowid, * ...)
+        #
+        # if there is no explicit column named: 'rowid', create one as primary_key!!!
+        #if "rowid" not in cls.base_fields:
+        #    from fields import IDField
+        #    cls.setup_field("rowid", 
+        #            IDField(name="rowid", unique=True, primary_key=True))
+        
+        # init database instance for this class
+        cls.database = SQLiteDatabase()
+        cls.database.contribute(cls)
+        
+        # populate cls.objects 
+        cls.objects = DataManager(cls)
             
 class BaseRecord(object):
     """Every Record Class has to derive from this Class"""
     __metaclass__ = MetaBaseRecord
     
     @classmethod
-    def setup_field(cls, name, field):
+    def setup_field(cls, name, field, field_group=False, sub_field=False):
         """Only for internal use, don't mess with it!"""
 
         # no starting underscore "_" in fieldname
@@ -113,23 +124,27 @@ class BaseRecord(object):
         if hasattr(cls, name):
             delattr(cls, name)
 
+
     def __init__(self, **kw):
-        # copy class base_fields to instanc:e
+        # copy class base_fields to instance
         self.fields = {}
         
-        from fields import ManyToOneRelation, OneToOneRelation, ManyToManyRelation 
+        from fields import ManyToOneRelation, OneToOneRelation, \
+                ManyToManyRelation, BaseFieldGroup
 
         for name, field in self.__class__.base_fields.items():
-            # all fields are inserted here:
-            self.fields[name] = field.clone()
+            # all fields are inserted here---just for reference
+            self.fields[name] = field #.clone()
 
-        # if there is some keyword-argument, that is not handled by the record, throw exception
+        # if there is some keyword-argument, that is not handled by the record, 
+        # throw exception
         for key in kw:
             if key == "rowid":
                 continue
 
             if not key in self.fields:
-                raise DatabaseError("The field/keyword: '{}' was not found in the record".format(key))
+                raise DatabaseError("The field/keyword: '{}' was not found " + \
+                                    "in the record".format(key))
 
         # set this obj as parent for all fields
         for name, field in self.fields.items():
@@ -138,6 +153,15 @@ class BaseRecord(object):
         # is this record-obj 'dirty' (has been changed since last save())
         self.dirty = True
         
+        add_kw = {}
+        for name in kw.keys():
+            field = self.fields.get(name)
+            if isinstance(field, BaseFieldGroup):
+                for k in field.key2field.keys():
+
+                    add_kw[name + "__" + k] = getattr(kw.get(name), k)
+        kw.update(add_kw)
+
         # process each defined field
         self.rowid = None
         self.found_primary_key = False 
@@ -145,11 +169,15 @@ class BaseRecord(object):
             field = self.fields.get(k)
     
             # keep field using the primary_key flag and ensure its uniqueness
-            if field is not None and field.primary_key:
+            if field is not None \
+                    and hasattr(field, "primary_key") \
+                    and field.primary_key:
+
                 if not self.found_primary_key:
                     self.found_primary_key = (k, v)
                 else:
-                    raise DatabaseError("Found multiple 'primary_key' flagged fields. Inserting: {} Found: {}". \
+                    raise DatabaseError("Found multiple 'primary_key' " + \
+                            "flagged fields. Inserting: {} Found: {}". \
                             format(k, str(self.found_primary_key)))
 
             #relation-field -> 1:N

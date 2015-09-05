@@ -16,96 +16,105 @@ UNIQUE_ROW_ID_NAME = "rowid"
 # fancier use of properties
 #Property = lambda func: property(**func()) 
 
-class AbstractField(object):
-    """Every Field class derives from this class"""
-    __metaclass__ = ABCMeta
-    
-    # various field flags (globally accepted keywords)
-    general_keywords = ["name", "size", "default", "primary_key", "required", "unique", "auto_inc"]
-    default = None        # default value
-    name = None           # name of field/column
-    size = None           # storing size in bytes (precision)
-    required = False      # value required to be set on insert/update
-    primary_key = False   # (the only!) primary_key inside table (row identity)
-    unique = False        # each row has a unique value (for this column)
-    auto_inc = False      # automatically increments column on each insert
 
-    # keep Field-specific applicable keywords
-    accepted_keywords = []
-   
-    def __init__(self, **kw):
+
+
+class MetaClassKeywordHandler(type):
+    """
+    Provides automagically generated class and instance variables according
+    to the following class members:
+     'keywords'  -> dict class members to default values, 
+                    aggregated through the whole inheratance,
+                    always set in obj---at least with default value
+    """
+
+    def __init__(cls, name, bases, dct):
+        # exclude the base classes from this behaviour
+        #if object in bases:
+        #    return
+
+        # collect keywords + defaults from base class
+        for base in bases:
+            if hasattr(base, "keywords"):
+                cls.keywords.update(base.keywords)
+            
+        # create class-members with default val for each item in "cls.keywords"
+        for key, val in cls.keywords.items():
+            setattr(cls, key, val)
+
+        super(MetaClassKeywordHandler, cls).__init__(name, bases, dct)
+
+    def __call__(cls, *vargs, **kw):
+
         # check, if kw contains solely legal keywords
-        wrong = [k for k in kw if not k in (self.accepted_keywords + self.general_keywords)]
+        wrong = [k for k in kw if not k in cls.keywords]
         if len(wrong) > 0:
-            raise DatabaseError("Keyword(s): {} not supported by this Field: {}". \
-                    format(", ".join(wrong), self.__class__.__name__))
-        
-        # accepted keywords get None as default 
-        for k in self.accepted_keywords:
-            if not k in kw:
-                kw[k] = None
+            raise DatabaseError("Keyword(s): {} unsupported by this Field: {}".\
+                    format(", ".join(wrong), cls.__class__.__name__))
+        out_inst = type.__call__(cls, *vargs, **kw)
 
-        # setting FieldObjects as member names
-        for k, v in kw.items():
-            setattr(self, k, v) 
+        for key, val in cls.keywords.items():
+            if key in kw:
+                setattr(out_inst, key, kw[key])
+            
+        return out_inst
 
-        # apply the various general flags/values
-        for k in self.general_keywords:
-            val = kw.get(k) if k in kw else getattr(self.__class__, k)
-            setattr(self, k, val)
+class MetaClassFieldGroup(MetaClassKeywordHandler):
+    """Constructs the necassary class for a FieldGroup"""
+
+    def __init__(cls, name, bases, dct):
+        # exclude the base classes from this behaviour
+        #if object in bases:
+        #    return
+
+        assert hasattr(cls, "key2field")
+        assert hasattr(cls, "cls")
+        assert hasattr(cls, "cls_ctor_args")
+
+        cls._fields = {}
+        for k, v in cls.key2field.items():
+            cls._fields[k] = v
+        #    setattr(cls, k,  property(cls.getter_factory(k), 
+        #                              cls.setter_factory(k)))
+
+        super(MetaClassFieldGroup, cls).__init__(name, bases, dct)
+ 
+    def __call__(cls, *vargs, **kw):
+        out_inst = type.__call__(cls, *vargs, **kw)
+        for k in cls.key2field.keys():
+            setattr(out_inst, k, None)
+        return out_inst
 
 
-        # keeps the explicit value of this field (and it's object, if applicable)
-        self._value = self.default if not "default" in kw else kw["default"]
+class SkeletonField(object):
+    """Mostly just an interface for alle field incarnations."""
 
-        # parent record object
-        self.parent = None
-        
-    # if an attribute is in "accepted_keywords", but not set return "None"
-    #def __getattr__(self, key):
-    #    if key in self.accepted_keywords + self.general_keywords:
-    #        return None
-    #    raise AttributeError(key)
+    __metaclass__ = MetaClassKeywordHandler
 
-    def clone(self):
-        """Mainly internal use - returns a clone (copy) of the AbstractField"""
+    keywords = {}
+
+    def clone(self, *vargs):
+        """(internal) returns a clone (copy) of the Field-object (self)"""
         kw = {}
-        for k in self.accepted_keywords + self.general_keywords:
-            kw[k] = getattr(self, k)    
-        out = self.__class__(**kw)
-        return out
+        for k, v in self.__class__.keywords.items():
+            if hasattr(self, k):
+                kw[k] = getattr(self, k)    
+            else:
+                kw[k] = v
+        return self.__class__(*vargs, **kw)
 
     def get_create(self, prefix=None, suffix=None):
-        """Get universal attributes needed for create column query"""
-        out = prefix or ""
+        return None #(prefix or "") + (suffix or "")
+    
+    def get_escaped(self):
+        return self.get()
 
-        # make this column unique across this table
-        if self.unique:
-            out += " UNIQUE"
-        
-        # make this column the primary_key column
-        if self.primary_key:
-            out += " PRIMARY KEY ASC"
+    def pre_save(self, action="insert", obj=None):
+        return True
 
-        # change sql-stmt, if column is required
-        if self.required:
-            out += " NOT NULL"
-        
-        # always set default value for each column
-        default_out = " DEFAULT NULL"
-        if self.default is not None:
-            default_out = " DEFAULT {}".format(self.get_escaped(default=True))
-        out += default_out
-
-        # set column to automatically increment itss value on insert
-        if self.auto_inc:
-            out += " AUTOINCREMENT"
-
-        if suffix is not None:
-            out += suffix
-
-        return out
-
+    def post_save(self, action="insert", obj=None):
+        return True
+    
     def set(self, v):
         """Set field value to 'v'"""
         if self.parent is not None:
@@ -117,22 +126,12 @@ class AbstractField(object):
         return self._value 
 
     def get_save(self):
-        """Get field's value to be saved. 
+        """
+        Get field's value to be saved. 
         Override if there is no column in the record for this field,
-        and simply return None, all other wrap to ::get()"""
+        and simply return None, all other wrap to ::get()
+        """
         return self.get()
-
-    def get_escaped(self, default=False):
-        """Get field value escaped/quoted - for sql update/insert"""
-        return self._value if not default else self.default
-
-    def pre_save(self, action="insert", obj=None):
-        """This is called directly before saving (action: 'update' or 'insert') the object"""
-        return True
-        
-    def post_save(self, action="insert", obj=None):
-        """This is called directly after the object was saved (action: 'update' or 'insert')"""
-        return True 
 
     # rich comparision methods, 
     # all return a FieldExpression for lazy evaluation
@@ -184,14 +183,148 @@ class AbstractField(object):
     def __div__(self, other):
         return FieldExpression(self, other, operator.div)
 
-            
+
+class BaseFieldGroup(SkeletonField):
+    """
+    Abstract to declare a mapping: arbitrary class <-> field(s)
+    Keywords:
+     'required'    -> field must be set in order to commit/saved
+    """
+    
+    __metaclass__ = MetaClassFieldGroup
+    
+    keywords = {"required": False, "name": None}
+
+    # wrapped regular class
+    cls = None
+    cls_ctor_args = ()
+
+    # mapping cls.* <-> field-representation
+    key2field = {}
+
+    def __init__(self, instance=None, ctor_args=None, **kw):
+        self._instance = self.cls(
+                *(self.cls_ctor_args if ctor_args is None else ctor_args)) \
+                        if instance is None else instance 
+        for k in self.__class__.key2field.keys():
+            setattr(self, k, getattr(self._instance, k))
+
+    def get_save(self):
+        return None
+
+    #@classmethod        
+    #def getter_factory(cls, member):
+    #    def getter(self):
+    #       return self._fields[member].get()
+
+    #@classmethod
+    #def setter_factory(cls, member):
+    #    def setter(self, val):
+    #        self._fields[member].set(val)
+    #        setattr(self._instance, member, val)
+
+    def set(self, val):
+        if isinstance(val, self.__class__.cls):
+            for k in self.__class__.key2field.keys():
+                inval = getattr(val, k)
+                setattr(self, k, inval)
+                setattr(self._instance, k, inval)
+
+    def get(self):
+        return self._instance
+        
+
+class AbstractField(SkeletonField):
+    """
+    Every Field class derives from this class.
+    Keywords:
+     'default'     -> default field value
+     'name'        -> name of field and (base) for column name
+     'size'        -> storing size in bytes (precision, if numeric)
+     'required'    -> field must be set in order to commit/saved
+     'primary_key' -> (the only!) primary_key in the parent's table 
+     'unique'      -> no duplicate entries inside one table for this field
+     'auto_inc'    -> automatically increment field value on each insert 
+    """
+    
+    __metaclass__ = MetaClassKeywordHandler
+    
+    # various field flags, and special default values
+    keywords = {"name": None,         "size": None,      "default": None,
+                "primary_key": False, "required": False, "unique": False,
+                "auto_inc": False,    "parent": None}
+
+    def __init__(self, **kw):
+        # keeps the explicit value of this field (and it's object, if applicable)
+        self._value = self.default if not "default" in kw else kw["default"]
+
+    # if an attribute is in "accepted_keywords", but not set return "None"
+    #def __getattr__(self, key):
+    #    if key in self.accepted_keywords + self.general_keywords:
+    #        return None
+    #    raise AttributeError(key)
+
+    #def clone(self):
+    #    """(internal) returns a clean clone (copy) of the Field-object (self)"""
+    #    myclone = super(AbstractField, self).clone()
+        #myclone._value = self._value
+        #myclone.parent = self.parent
+
+    def get_create(self, prefix=None, suffix=None):
+        """Get universal attributes needed for create column query"""
+        out = prefix or ""
+
+        # make this column unique across this table
+        if self.unique:
+            out += " UNIQUE"
+        
+        # make this column the primary_key column
+        if self.primary_key:
+            out += " PRIMARY KEY ASC"
+
+        # change sql-stmt, if column is required
+        if self.required:
+            out += " NOT NULL"
+        
+        # always set default value for each column
+        default_out = " DEFAULT NULL"
+        if self.default is not None:
+            default_out = " DEFAULT {}".format(self.get_escaped(default=True))
+        out += default_out
+
+        # set column to automatically increment itss value on insert
+        if self.auto_inc:
+            out += " AUTOINCREMENT"
+
+        if suffix is not None:
+            out += suffix
+
+        return out
+
+    def get_escaped(self, default=False):
+        """Get field value escaped/quoted - for sql update/insert"""
+        return self._value if not default else self.default
+
+    def pre_save(self, action="insert", obj=None):
+        """
+        This is called directly before saving 
+        (action: 'update' or 'insert') the object
+        """
+        return True
+        
+    def post_save(self, action="insert", obj=None):
+        """
+        This is called directly after the object was saved.
+        (action: 'update' or 'insert')
+        """
+        return True 
 
 class IntegerField(AbstractField):
-    """Store a single integer value. 
+    """
+    Store a single integer value. 
     The backend should provide at least 32bit signed
     """
-    accepted_keywords = ["foreign_key"]
-    default = 0
+    keywords = {"foreign_key": None, "default": 0}
 
     # TODO: add different sizes
     def get_create(self, prefix=None, suffix=None):
@@ -205,13 +338,12 @@ class IntegerField(AbstractField):
 
 class IDField(IntegerField):
     """Store the unique row identification."""
-    name = UNIQUE_ROW_ID_NAME
-    primary_key = True
-    unique = True
+    keywords = {"name": UNIQUE_ROW_ID_NAME, "primary_key": True, 
+                "unique": True}
 
 class BooleanField(IntegerField):
     """Store a single boolean values."""
-    default = False
+    keywords = {"default": False}
 
     def __init__(self, **kw):
         super(BooleanField, self).__init__(**kw)
@@ -232,7 +364,7 @@ class BooleanField(IntegerField):
 
 class DateTimeField(IntegerField):
     """Store a single date and time values."""
-    accepted_keywords = ["auto_now", "auto_now_add"]
+    keywords = {"auto_now": False, "auto_now_add": False}
   
     def get_create(self, prefix=None, suffix=None):
         return (prefix or "") \
@@ -255,10 +387,10 @@ class DateTimeField(IntegerField):
         return FancyDate(self._value).get()
       
 class FloatField(AbstractField):
-    """Store a floating point number.
-    The backend should provide at least 32bit
     """
-    default = 0.0    
+    Store a floating point number. The backend should provide at least 32bit
+    """
+    keywords = {"default": 0.0}
     
     def get_create(self, prefix=None, suffix=None):
         out = "{} FLOAT".format(self.name)
@@ -276,8 +408,7 @@ class BlobField(AbstractField):
 
 class StringField(AbstractField):
     """Store a string, i.e., some "useful" string - includes stripping..."""
-    accepted_keywords = ["foreign_key"]
-    default = ""
+    keywords = {"foreign_key": None, "default": ""}
     
     def get_create(self, prefix=None, suffix=None):
         out = "{} {}".format(self.name, 
@@ -301,7 +432,7 @@ class StringField(AbstractField):
 
 class OptionField(StringField):
     """Store one of the provided options as string."""
-    accepted_keywords = ["options"]
+    keywords = {"options": []}
     
     def __init__(self, options, **kw):
         # options must be a regular list of strings, iterable is ok
@@ -316,10 +447,12 @@ class OptionField(StringField):
 
         # cross-check own size with provided and so on
         if kw.get("size") is not None and self.size <= kw.get("size"):
-            raise DatabaseError("provided size ({}<{}) is less than biggest provided option: {}". \
-                    format(kw.get("size"), self.size, ", ".join(options)))
+            raise DatabaseError(
+                    "provided size ({}<{}) is less than biggest " + 
+                    "provided option: {}". \
+                        format(kw.get("size"), self.size, ", ".join(options)))
     
-        # the default value defaults to first item of options, if no 'default' is set
+        # default value -> first item of options, if no 'default' is set
         if "default" in kw:
             assert kw["default"] in options
             self.default = kw["default"]
@@ -344,27 +477,28 @@ class NoneTableField(AbstractField):
 
 # base class for all relation-based fields
 class AbstractRelationField(AbstractField):
-    accepted_keywords = ["rel_record", "backref", "idtype"]
     
-    def __init__(self, rel_record, backref=None, idtype=None, expr=None, **kw):
+    __metaclass__ = MetaClassKeywordHandler
+    keywords = {"rel_record": None, "backref": None, 
+                "idtype": (int, long),     "expr": None}
+    
+    def __init__(self, rel_record, **kw):
         assert issubclass(rel_record, BaseRecord)
-        
-        kw.update({
-            "rel_record" : rel_record,
-            "backref": backref,
-            "idtype": idtype or (int,)
-            })
-        
+
+        self.rel_record = rel_record
+
         # slot to keep assigned, not-saved relation object(s)
         self.obj_store = []
 
         super(AbstractRelationField, self).__init__(**kw)
+    
     
     def get(self):
         raise NotImplementedError()
 
     def set(self, val):
         # target/right field type
+ 
         if isinstance(val, self.rel_record):
             # not saved yet, keep obj
             if val.rowid is None:
