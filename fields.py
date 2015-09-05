@@ -107,12 +107,16 @@ class SkeletonField(object):
         return self.get()
 
     def pre_save(self, action="insert", obj=None):
-        """Hook to take action before a save() operation"""
+        """
+        Called directly before saving (action: 'update' or 'insert') the object
+        """
         return True
-
+        
     def post_save(self, action="insert", obj=None):
-        """Hook to take action after a save() operation"""
-        return True
+        """
+        Called directly after object was saved. (action: 'update' or 'insert')
+        """
+        return True 
     
     def set(self, v):
         """Set field value to 'v'"""
@@ -211,7 +215,6 @@ class BaseFieldGroup(SkeletonField):
 
     def get_save(self):
         return None 
-
     def get_create(self):
         return None
 
@@ -245,25 +248,13 @@ class AbstractField(SkeletonField):
     __metaclass__ = MetaClassKeywordHandler
     
     # various field flags, and special default values
-    keywords = {"name": None,         "size": None,      "default": None,
+    keywords = {"name":        None,  "size":     None,  "default": None,
                 "primary_key": False, "required": False, "unique": False,
-                "auto_inc": False,    "parent": None}
+                "auto_inc":    False, "parent":   None}
 
     def __init__(self, **kw):
         # keeps the explicit value of this field (and it's object, if applicable)
         self._value = self.default if not "default" in kw else kw["default"]
-
-    # if an attribute is in "accepted_keywords", but not set return "None"
-    #def __getattr__(self, key):
-    #    if key in self.accepted_keywords + self.general_keywords:
-    #        return None
-    #    raise AttributeError(key)
-
-    #def clone(self):
-    #    """(internal) returns a clean clone (copy) of the Field-object (self)"""
-    #    myclone = super(AbstractField, self).clone()
-        #myclone._value = self._value
-        #myclone.parent = self.parent
 
     def get_create(self, prefix=None, suffix=None):
         """Get universal attributes needed for create column query"""
@@ -300,28 +291,12 @@ class AbstractField(SkeletonField):
         """Get field value escaped/quoted - for sql update/insert"""
         return self._value if not default else self.default
 
-    def pre_save(self, action="insert", obj=None):
-        """
-        This is called directly before saving 
-        (action: 'update' or 'insert') the object
-        """
-        return True
-        
-    def post_save(self, action="insert", obj=None):
-        """
-        This is called directly after the object was saved.
-        (action: 'update' or 'insert')
-        """
-        return True 
-
+    
 class IntegerField(AbstractField):
-    """
-    Store a single integer value. 
-    The backend should provide at least 32bit signed
-    """
+    """Store a single integer value"""
     keywords = {"foreign_key": None, "default": 0}
 
-    # TODO: add different sizes
+    # TODO: add different sizes -> in sqlite afaik not needed
     def get_create(self, prefix=None, suffix=None):
         out = "{} INT".format(self.name)
         out = super(IntegerField, self).get_create(prefix=out)
@@ -373,12 +348,15 @@ class DateTimeField(IntegerField):
         return True
 
     def get_fancy_time(self):
+        """Return human readable time string"""
         return FancyTime(self._value).get()
 
     def get_fancy_datetime(self):
+        """Return human readable date and time string"""
         return FancyDateTime(self._value).get()
 
     def get_fancy_date(self):
+        """Return human readable data string"""
         return FancyDate(self._value).get()
       
 class FloatField(AbstractField):
@@ -514,9 +492,11 @@ class AbstractRelationField(AbstractField):
                        str(type(val))))        
    
     def setup_relation(self, record):
+        """Do the necassary housekeeping for this relation class/field"""
         raise NotImplementedError()
     
     def gen_backref_name(self, target):
+        """Generate an unique back-reference identifier"""
         return target.__name__.lower()
    
 # column in 'rel_record' pointing at my parent 
