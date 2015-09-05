@@ -18,7 +18,7 @@ class MetaClassKeywordHandler(type):
     Provides automagically generated class and instance variables according
     to the following class members:
      'keywords'  -> dict class members to default values, 
-                    aggregated through the whole inheratance,
+                    aggregated through the whole inheritance,
                     always set in obj---at least with default value
     """
 
@@ -27,10 +27,14 @@ class MetaClassKeywordHandler(type):
         if object in bases:
             return
 
-        # collect keywords + defaults from base class
+        # collect keywords + defaults from base class(es) 
+        # inherited keywords always overwrite their ancestors
+        tmp_keys = {}
         for base in bases:
             if hasattr(base, "keywords"):
-                cls.keywords.update(base.keywords)
+                tmp_keys.update(base.keywords)
+        tmp_keys.update(cls.keywords)
+        cls.keywords = tmp_keys
             
         # create class-members with default val for each item in "cls.keywords"
         for key, val in cls.keywords.items():
@@ -307,12 +311,12 @@ class IntegerField(AbstractField):
         return out
 
 class IDField(IntegerField):
-    """Store the unique row identification."""
+    """Store the unique row identification"""
     keywords = {"name": UNIQUE_ROW_ID_NAME, "primary_key": True, 
                 "unique": True}
 
 class BooleanField(IntegerField):
-    """Store a single boolean values."""
+    """Store a single boolean values"""
     keywords = {"default": False}
 
     def __init__(self, **kw):
@@ -333,7 +337,7 @@ class BooleanField(IntegerField):
         return 1 if v in [True, 1] else 0
 
 class DateTimeField(IntegerField):
-    """Store a single date and time values."""
+    """Store a single date and time values"""
     keywords = {"auto_now": False, "auto_now_add": False}
   
     def get_create(self, prefix=None, suffix=None):
