@@ -16,7 +16,7 @@ class BaseDatabase(object):
     query_counter = 0
 
     # set to 'True' to get all plaintext sql-queries in 'stdout'
-    debug = False
+    debug = True
     
     # mmmh, system wide list of contributing records?! 
     contributed_records = []
@@ -49,18 +49,25 @@ class MemoryDatabase(BaseDatabase):
     pass
 
 class SQLiteDatabase(BaseDatabase):
-    """Low-Level Object-Based SQLiteDatabase Interface"""
+    """Low-level object-based SQLiteDatabase interface"""
 
     # locking mechanism!
     lock = Lock()
 
-     # central db-connection keeping:
+    # central db-connection keeping:
     db_file = None 
     db_con = None 
+
+    # logger instance
+    log = None
     
-    def __init__(self, db_fn=None, force=False, full=True):
+    def __init__(self, db_fn=None, force=False, full=True, logger=None):
+        if logger is not None:
+            SQLiteDatabase.log = logger
+
         if db_fn is not None:
             self.setup(db_fn, force, full)
+
 
     def setup(self, db_fn, force=False, full=True):
         """Set up SQLiteDatabase connection"""
@@ -72,32 +79,38 @@ class SQLiteDatabase(BaseDatabase):
             self.create_tables()
 
     def close(self, force=False):
+        """Close current database connection"""
         if SQLiteDatabase.db_con is not None or force is True:
             if SQLiteDatabase.db_con is not None:
+                SQLiteDatabase.db_con.commit()
                 SQLiteDatabase.db_con.close()
             SQLiteDatabase.db_file = None
             SQLiteDatabase.db_con = None
  
     def backup(self, fn):
+        """Backup current database to 'fn'"""
         dump = []
         if SQLiteDatabase.db_con:
             for line in SQLiteDatabase.db_con.iterdump():
                 dump.append( line )
 
             new_con = sqlite.connect(fn)
-            new_con.executescript("".join(dump))
+            new_con.executescript(" ".join(dump))
             new_con.isolation_level = None
+            new_con.commit()
             new_con.close()
         else:
             raise DatabaseError("No database opened")
             
     def reset(self):
+        """Close current database and reset all relevant counters"""
         if SQLiteDatabase.db_con is not None:
             self.close()
         SQLiteDatabase.query_counter = 0
         SQLiteDatabase.contributed_records = []
 
     def setup_relations(self):
+        """Setup inter-field relations"""
         from fields import AbstractRelationField
 
         # first go over all to gather relation-fields
@@ -134,7 +147,7 @@ class SQLiteDatabase(BaseDatabase):
             q = "CREATE TABLE {} ({})". \
                     format(rec.table, ", ".join(x.get_create() \
                         for x in rec.base_fields.values() \
-                            if x.name and x.get_create() not in ["", None])
+                            if x.name and x.get_create() not in ["", (), None])
                     )
             self.query(q)
        
@@ -178,11 +191,7 @@ class SQLiteDatabase(BaseDatabase):
         or update if rowid if found in the table
         """
         
-        # does it already exist ? DOIN' NOTHIN' HERE!!!!!??!
-        #q = "SELECT rowid FROM {} WHERE rowid=?".format(obj.table)
-        
         # determine action (act) - either "update" or "insert"
-        #act = "update", if obj.rowid and self.query(q, (obj.rowid,)) else "insert"
         act = "update" if obj.rowid else "insert"
         
         # prepare all fields to be saved using Field::pre_save()
@@ -193,21 +202,22 @@ class SQLiteDatabase(BaseDatabase):
                         format(attr, getattr(obj, attr)))
      
         # collect data (omit empty-fields, pseudo-fields)
-
         attr_vals = [{"col": k, "val": v.get_save()} \
                 for k, v in obj.fields.items() \
-                    if v.get_save() is not None]
+                    if v.get_save() not in ((), None)]
+        
         # replace BaseRecord descendants with their .rowid 
         from baserecord import BaseRecord
         for i in xrange(len(attr_vals)):
             if issubclass(attr_vals[i]["val"].__class__, BaseRecord):
                 attr_vals[i]["val"] = attr_vals[i]["val"].rowid
         
+        print attr_vals
+
         # construct the sql query 
         # --- UPDATE
         if act == "update":
             fields = ",".join((x["col"] + "=?") for x in attr_vals)
-            #fields = ", ".join("{}=?".format(x["col"] for x in attr_vals))
             q = "UPDATE {} SET {} WHERE rowid={}". \
                     format(obj.table, fields, obj.rowid)
         # --- INSERT

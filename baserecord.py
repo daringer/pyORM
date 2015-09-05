@@ -1,62 +1,15 @@
 #!/usr/bin/python
 #-*- coding: utf-8 -*-
 
-
 from core import DatabaseError, DataManager, SQLiteDatabase, MemoryDatabase
 
 __metaclass__ = type
-
-#class BaseRelationWrapper(object):
-#    def __init__(self, target_cls, obj, ex): 
-#        # target class relate to
-#        self._target = target_cls
-#        # my own object instance (row/record)
-#        self._parent = obj
-#        # expression used for matching/join
-#        self.expr = ex 
-#
-#    def _get_db_interface(self):
-#        raise NotImplementedError()
-#    
-# Nearly (transparent) wrapper for a single object 
-# one2one: table1.id <-> table2.id
-#class OneToOneRelationWrapper(BaseRelationWrapper):
-#    # to access the fields in the record as they were regular attributes
-#    def __getattr__(self, key):
-#        if key in self._target.base_fields:
-#            return self._get_db_interface()(_=self.expr)
-#        raise AttributeError("The attribute with the name: '{}' does not exist".format(key))
-#        
-#    def __setattr__(self, key, val):
-#        if key in self._target.base_fields:
-#            raise NotImplementedError("found field, but setting not supported, yet...TODO")
-#        object.__setattr__(self, key, val)
-#
-#    def _get_db_interface(self):
-#        return self._target.objects.get
-#
-## handles like a list - sounds _CRAZY_
-## one2many: table1.id <-> [table2.ref_id, ...]
-#class OneToManyRelationWrapper(list, BaseRelationWrapper):
-#    def __init__(self, target_cls, obj, ex):
-#        list.__init__()
-#        BaseRelationWrapper.__init__(target_cls, obj, ex)
-#
-#    def _get_db_interface(self):
-#        return self._target.objects.filter
-#
-#
-#def relation_wrapper_factory(target_cls, base_wrapper_cls):
-#    return type(target_cls.__class__.__name__ + "RelationWrapper", 
-#        (base_wrapper_cls, ), {})
-
 
 class MetaBaseRecord(type):
     """The MetaClass used to accomplish the dynamic generated Record classes"""
     def __init__(cls, name, bases, dct):
         
         # exclude the base class from this behaviour
-        #if not name == "BaseRecord":                
         if object in bases:
             return
         
@@ -72,7 +25,7 @@ class MetaBaseRecord(type):
         while len(workqueue) > 0:
             curcls, prefix, att = workqueue.pop(0)
 
-            #check for minimal field name length (> 2)
+            # check for minimal field name length (> 2)
             if len(att) < 2:
                 raise DatabaseError("For __reasons unknown__ field " + \
                                     "names must have at least 2 chars")
@@ -82,40 +35,22 @@ class MetaBaseRecord(type):
                 field = getattr(curcls, att)
             else:
                 field = curcls
-            #try:
             
+            # description TODO ;D
             if issubclass(field.__class__, AbstractField):
                 cls.setup_field(prefix + att, field)
 
             elif issubclass(field.__class__, BaseFieldGroup):
                 cls.setup_field(prefix + att, field)
 
-                for sub_field_key, sub_field in field._fields.items():
+                for sub_field_key, sub_field in field.grp_fields.items():
                     if issubclass(sub_field.__class__, BaseFieldGroup):
-                        workqueue.append((sub_field, prefix + att + "__", sub_field_key))
+                        workqueue.append((sub_field, prefix + att + "__", 
+                            sub_field_key))
+
                     elif issubclass(sub_field.__class__, AbstractField):
-                        cls.setup_field(prefix + att + "__" + sub_field_key, sub_field)
-                        
-
-                              
-            #except AttributeError as e:
-            #    print "Critical error encountered:"
-            #    print e.__class__.__name__, e.message, e.args
-            #    print "--> Accidently used an incorrect base class?"
-            #    exit(1)
-
-            
-        #print cls.base_fields
-        # this does not behave as expected inside sqlite3 
-        # - rowid named col needs AUTOINC, which sux (performance)
-        # - so omit this and use built-in rowid, 
-        #   which works nicely except for the unintuitive interface (select rowid, * ...)
-        #
-        # if there is no explicit column named: 'rowid', create one as primary_key!!!
-        #if "rowid" not in cls.base_fields:
-        #    from fields import IDField
-        #    cls.setup_field("rowid", 
-        #            IDField(name="rowid", unique=True, primary_key=True))
+                        cls.setup_field(prefix + att + "__" + sub_field_key, 
+                                sub_field)
         
         # init database instance for this class
         cls.database = SQLiteDatabase()
@@ -146,7 +81,6 @@ class BaseRecord(object):
         if hasattr(cls, name):
             delattr(cls, name)
 
-
     def __init__(self, **kw):
         # copy class base_fields to instance
         self.fields = {}
@@ -154,12 +88,12 @@ class BaseRecord(object):
         from fields import ManyToOneRelation, OneToOneRelation, \
                 ManyToManyRelation, BaseFieldGroup
 
+            
         for name, field in self.__class__.base_fields.items():
-            # all fields are inserted here---just for reference
-            self.fields[name] = field #.clone()
-
-        # if there is some keyword-argument, that is not handled by the record, 
-        # throw exception
+            self.fields[name] = field.clone()
+            self.fields[name].name = name
+        
+        # check for a non-existing passwd keyword
         for key in kw:
             if key == "rowid":
                 continue
@@ -172,24 +106,24 @@ class BaseRecord(object):
         for name, field in self.fields.items():
             field.parent = self
         
-        # is this record-obj 'dirty' (has been changed since last save())
+        # 'dirty'-flag ... 'True' -> needs to be saved
         self.dirty = True
         
+        # keyword assignment
         add_kw = {}
         for name in kw.keys():
             field = self.fields.get(name)
             if isinstance(field, BaseFieldGroup):
                 for k in field.key2field.keys():
-
                     add_kw[name + "__" + k] = getattr(kw.get(name), k)
         kw.update(add_kw)
 
         # process each defined field
         self.rowid = None
         self.found_primary_key = False 
+
         for k, v in kw.items():
             field = self.fields.get(k)
-    
             # keep field using the primary_key flag and ensure its uniqueness
             if field is not None \
                     and hasattr(field, "primary_key") \
@@ -202,31 +136,7 @@ class BaseRecord(object):
                             "flagged fields. Inserting: {} Found: {}". \
                             format(k, str(self.found_primary_key)))
 
-            #relation-field -> 1:N
-            #elif issubclass(field.__class__, OneToManyRelation):
-            #    #field.set(v)
-            #    #field.setup_relation(
-            #    print v
-            #    raise TypeError("Cannot set 1:N relation...")
-            #
-            # relation-field -> N:1
-            #elif issubclass(field.__class__, ManyToOneRelation):
-                #rid = v if isinstance(v, int) else v.rowid
-                #field.set(field.related_record.objects.get(rowid=rid))
-            #    field.set(v)
-
-            # relation-field -> 1:1
-            #elif issubclass(field.__class__, OneToOneRelation):
-                #rid = v if isinstance(v, int) else v.rowid
-                #field.set(field.related_record.objects.get(rowid=rid))
-            #    field.set(v)
-
-            # relation-field -> N:M
-            #elif issubclass(field.__class__, ManyToManyRelation):
-            #    raise DatabaseError("NOT IMPLEMENTED: ManyToManyRelation")
-
-            # unique-identifier field 
-            # (overwritten by user-defined Field, if inside this branch)
+            # handle index col
             elif k == "rowid":
                 if field is not None:
                     field.set(v)
@@ -235,7 +145,11 @@ class BaseRecord(object):
             # regular, all other fields
             else:
                 field.set(v)
-
+        
+        for k, v in self.fields.items():
+            if isinstance(v, BaseFieldGroup):
+                v.update_cls()
+             
     # yes save... 
     def save(self):
         """Save object in database"""

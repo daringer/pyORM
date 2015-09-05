@@ -72,16 +72,20 @@ class MetaClassFieldGroup(MetaClassKeywordHandler):
         assert hasattr(cls, "cls")
         assert hasattr(cls, "cls_ctor_args")
 
-        cls._fields = {}
+        # class wide reference to the used fields
+        cls.grp_fields = {}
         for k, v in cls.key2field.items():
-            cls._fields[k] = v
+            cls.grp_fields[k] = v.clone()
 
         super(MetaClassFieldGroup, cls).__init__(name, bases, dct)
  
     def __call__(cls, *vargs, **kw):
         out_inst = type.__call__(cls, *vargs, **kw)
-        for k in cls.key2field.keys():
+        
+        for k, v in cls.key2field.items():
             setattr(out_inst, k, None)
+            #out_inst.fields.get(k).set(
+            #out_inst.fields[k] = v.clone()
         return out_inst
 
 
@@ -198,49 +202,55 @@ class BaseFieldGroup(SkeletonField):
      'required'    -> field must be set in order to commit/saved
      'name'        -> name of the represented field group
     """
-    
     __metaclass__ = MetaClassFieldGroup
     
     keywords = {"required": False, "name": None}
 
     # wrapped class
     cls = None
-    cls_ctor_args = ()
+    cls_ctor_args = None
 
     # mapping cls.* <-> field-representation
     key2field = {}
 
-    def __init__(self, instance=None, ctor_args=None, **kw):
-        self._instance = self.cls(
-                *(self.cls_ctor_args if ctor_args is None else ctor_args)) \
-                        if instance is None else instance 
-        for k in self.__class__.key2field.keys():
-            setattr(self, k, getattr(self._instance, k))
+    def __init__(self, ctor_args=None, **kw):
+        # create the mapped data-structure
+        args = BaseFieldGroup.cls_ctor_args if ctor_args is None else ctor_args
+        self._value = self.cls(*args) if args else self.cls()
 
+    def update_cls(self, ctor_args=None, from_fields=True):
+        """construct instance of 'cls'"""
+        obj = self._value 
+        for k in self.__class__.key2field.keys():
+            name = self.name + "__" + k
+            setattr(obj, k, self.parent.fields[name].get())
+            
+    def update_fields(self):
+        """update grouped fields inside the parent record"""
+        for k in self.__class__.key2field.keys():
+            name = self.name + "__" + k
+            self.parent.fields[name].set(getattr(self._value,  k))
+    
     def get_save(self):
         return None 
+
     def get_create(self):
         return None
 
     def set(self, val):
         if isinstance(val, self.__class__.cls):
-            for k in self.__class__.key2field.keys():
-                inval = getattr(val, k)
-                setattr(self, k, inval)
-                setattr(self._instance, k, inval)
+            self._value = val
+            self.update_fields()
         
         elif not self.required and val is None:
-            for k  in self.__class__.key2field.keys():
-                setattr(self, k, None)
-                setattr(self._instance, k, None)
+            self._value = self.cls(self.__class__.cls_ctor_args)
+            self.update_fields()
 
         else:
             raise TypeError("Passed instance of '{}', needed: '{}'". \
                     format(val.__class__.__name__, self.__class__.cls.__name__))
-
     def get(self):
-        return self._instance
-        
+        return self._value
 
 class AbstractField(SkeletonField):
     """
@@ -460,9 +470,7 @@ class NoneTableField(AbstractField):
 
 # base class for all relation-based fields
 class AbstractRelationField(AbstractField):
-    
-    __metaclass__ = MetaClassKeywordHandler
-    keywords = {"rel_record": None, "backref": None, 
+    keywords = {"rel_record": None,        "backref": None, 
                 "idtype": (int, long),     "expr": None}
     
     def __init__(self, rel_record, **kw):
@@ -474,7 +482,6 @@ class AbstractRelationField(AbstractField):
         self.obj_store = []
 
         super(AbstractRelationField, self).__init__(**kw)
-    
     
     def get(self):
         raise NotImplementedError()

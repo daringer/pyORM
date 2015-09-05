@@ -180,17 +180,36 @@ b2.save()
 # backref + 1:N + N:1 works good
 print len(a1.books)
 
-# field group to transparently put any datastructure inside the db
+# field group to transparently put any datastructure inside the db 
 m = MultiLevelData()
 m.pos = Coord(24,21,43)
 m.direction = Vector(23,23,42)
 m.info = "Man is des scharf!"
 
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
+print "AIJDJIASJDASIOAJSDIOOASDASDJI"
 head_track = HeadTrackData(pos=Coord(1,2,4), 
                            direction=Vector(4,2,5), 
                            author=a2,
                            multi=m)
+print head_track.multi
+print head_track.multi.info
 head_track.save()
+
+print head_track.objects.all()
+print head_track.multi
+print head_track.multi.direction
+print head_track.multi.info
 
 print "head tracking data, saved---printing:"
 print "rowid", head_track.rowid
@@ -199,5 +218,15 @@ print "dir", head_track.direction
 print "author", head_track.author
 m = head_track.multi
 print "multi-depth", m.pos, m.direction, m.info
+
+db.backup("foo.sqlite")
+db.close()
+db.setup("foo.sqlite")
+
+obj = head_track.objects.all()[0]
+print obj
+print obj.multi.pos, obj.multi.direction, obj.multi.info
+print obj.pos, obj.direction
+    
 
 db.close()
