@@ -58,12 +58,20 @@ class SQLiteDatabase(BaseDatabase):
     db_file = None 
     db_con = None 
     
-    def init(self, db_file, force=False):
-        """init SQLiteDatabase connection"""
+    def __init__(self, db_fn=None, force=False, full=True):
 
+        if db_fn is not None:
+            self.setup(db_fn, force, full)
+
+    def setup(self, db_fn, force=False, full=True):
+        """Set up SQLiteDatabase connection"""
         if SQLiteDatabase.db_con is None or force is True:
-            SQLiteDatabase.db_file = db_file
+            SQLiteDatabase.db_file = db_fn
     
+        if full:
+            self.setup_relations()
+            self.create_tables()
+
     def close(self, force=False):
         if SQLiteDatabase.db_con is not None or force is True:
             if SQLiteDatabase.db_con is not None:

@@ -118,10 +118,7 @@ class HeadTrackData(BaseRecord):
 
 # set up database
 fn = ":memory:"
-db = SQLiteDatabase()
-db.init(fn)
-db.setup_relations()
-db.create_tables()
+db = SQLiteDatabase(fn)
 
 
 # create model instances
