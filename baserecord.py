@@ -64,25 +64,47 @@ class MetaBaseRecord(type):
         
         # move all "*Fields" to self.fields 
         cls.base_fields = {}
-        for att in cls.__dict__.keys()[:]:
-            
-            # check for minimal field name length (> 2)
+
+        # queue based descent in hierachy to find all necassary fields of
+        # arbitrary depth
+        workqueue = [(cls, "", att) for att in cls.__dict__.keys()]
+        from fields import AbstractField, BaseFieldGroup
+        while len(workqueue) > 0:
+            curcls, prefix, att = workqueue.pop(0)
+
+            #check for minimal field name length (> 2)
             if len(att) < 2:
                 raise DatabaseError("For __reasons unknown__ field " + \
                                     "names must have at least 2 chars")
  
-            # identify and setup fields inside this record
-            field = getattr(cls, att)
-            from fields import AbstractField, BaseFieldGroup
+            # identify and setup fields inside this cls
+            if not issubclass(curcls.__class__, (AbstractField, BaseFieldGroup)):
+                field = getattr(curcls, att)
+            else:
+                field = curcls
+            #try:
+            
             if issubclass(field.__class__, AbstractField):
-                cls.setup_field(att, field)
+                cls.setup_field(prefix + att, field)
 
             elif issubclass(field.__class__, BaseFieldGroup):
-                cls.setup_field(att, field, field_group=True)
+                cls.setup_field(prefix + att, field)
 
                 for sub_field_key, sub_field in field._fields.items():
-                    cls.setup_field(att + "__" + sub_field_key, sub_field, 
-                            sub_field=True)
+                    if issubclass(sub_field.__class__, BaseFieldGroup):
+                        workqueue.append((sub_field, prefix + att + "__", sub_field_key))
+                    elif issubclass(sub_field.__class__, AbstractField):
+                        cls.setup_field(prefix + att + "__" + sub_field_key, sub_field)
+                        
+
+                              
+            #except AttributeError as e:
+            #    print "Critical error encountered:"
+            #    print e.__class__.__name__, e.message, e.args
+            #    print "--> Accidently used an incorrect base class?"
+            #    exit(1)
+
+            
         #print cls.base_fields
         # this does not behave as expected inside sqlite3 
         # - rowid named col needs AUTOINC, which sux (performance)
@@ -103,12 +125,12 @@ class MetaBaseRecord(type):
         cls.objects = DataManager(cls)
             
 class BaseRecord(object):
-    """Every Record Class has to derive from this Class"""
+    """Every record class has to derive from this class"""
     __metaclass__ = MetaBaseRecord
     
     @classmethod
-    def setup_field(cls, name, field, field_group=False, sub_field=False):
-        """Only for internal use, don't mess with it!"""
+    def setup_field(cls, name, field):
+        """(internal) handles name assignment for new fields, and moves it"""
 
         # no starting underscore "_" in fieldname
         assert not name.startswith("_"), \
@@ -262,7 +284,8 @@ class BaseRecord(object):
     def get(self, key):
         if key in self.__class__.base_fields:
             return self.fields[key].get()
-        raise AttributeError("The attr with the name: '{}' does not exist".format(key))
+        raise AttributeError("The attr with the name: '{}' does not exist". \
+                format(key))
     
     def set(self, key, val):
         if key in self.__class__.base_fields:

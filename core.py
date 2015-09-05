@@ -59,7 +59,6 @@ class SQLiteDatabase(BaseDatabase):
     db_con = None 
     
     def __init__(self, db_fn=None, force=False, full=True):
-
         if db_fn is not None:
             self.setup(db_fn, force, full)
 
@@ -78,7 +77,20 @@ class SQLiteDatabase(BaseDatabase):
                 SQLiteDatabase.db_con.close()
             SQLiteDatabase.db_file = None
             SQLiteDatabase.db_con = None
+ 
+    def backup(self, fn):
+        dump = []
+        if SQLiteDatabase.db_con:
+            for line in SQLiteDatabase.db_con.iterdump():
+                dump.append( line )
 
+            new_con = sqlite.connect(fn)
+            new_con.executescript("".join(dump))
+            new_con.isolation_level = None
+            new_con.close()
+        else:
+            raise DatabaseError("No database opened")
+            
     def reset(self):
         if SQLiteDatabase.db_con is not None:
             self.close()
@@ -263,11 +275,13 @@ class SQLiteDatabase(BaseDatabase):
         # --- ORDER BY
         if order_by:
             if any(not x.strip("+-") in all_fields for x in order_by):
-                raise SQLiteDatabaseError("'order by' contains non field keys: {}, availible are only: {}". \
+                raise SQLiteDatabaseError("'order by' contains non field " + \
+                        "keys: {}, availible are only: {}". \
                         format(", ".join(order_by), ", ".join(all_fields)) )
         
             q += " ORDER BY {}".format(
-                    ", ".join("{}{}".format(x[0], " DESC" if x[1].startswith("-") else "") \
+                    ", ".join("{}{}".format(x[0], " DESC" \
+                            if x[1].startswith("-") else "") \
                             for x in order_by))
         
         # --- LIMIT
@@ -279,7 +293,9 @@ class SQLiteDatabase(BaseDatabase):
 
 class DataManager(object):
     """Object managing class placed as AnyRecord.objects"""
-    def __init__(self, rec, pre_filter={}, order_by=None, limit=None, op_mode=None):
+    def __init__(self, rec, pre_filter={}, order_by=None, 
+            limit=None, op_mode=None):
+
         self.record = rec
         self.pre_filter = pre_filter
 

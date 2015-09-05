@@ -228,6 +228,12 @@ class BaseFieldGroup(SkeletonField):
                 inval = getattr(val, k)
                 setattr(self, k, inval)
                 setattr(self._instance, k, inval)
+        
+        elif not self.required and val is None:
+            for k  in self.__class__.key2field.keys():
+                setattr(self, k, None)
+                setattr(self._instance, k, None)
+
         else:
             raise TypeError("Passed instance of '{}', needed: '{}'". \
                     format(val.__class__.__name__, self.__class__.cls.__name__))
