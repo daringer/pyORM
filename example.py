@@ -124,16 +124,19 @@ print mybook.author.address
 b2.author = a2 
 b2.save()
 
-# fine backref + 1:N + N:1 works good
+# backref + 1:N + N:1 works good
 print len(a1.books)
 
-head_track = HeadTrackData(pos=Point3D(1,2,4), 
-                           direction=Point3D(4,2,5), 
+# field group to transparently put any datastructure inside the db
+head_track = HeadTrackData(pos=Coord(1,2,4), 
+                           direction=Vector(4,2,5), 
                            author=a2)
-
-print "#####", head_track.pos
 head_track.save()
 
-print head_track.pos
+print "head tracking data, saved---printing:"
+print "rowid", head_track.rowid
+print "pos", head_track.pos
+print "dir", head_track.direction 
+print "author", head_track.author
 
 db.close()

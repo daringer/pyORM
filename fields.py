@@ -13,12 +13,6 @@ __metaclass__ = type
 
 UNIQUE_ROW_ID_NAME = "rowid"
 
-# fancier use of properties
-#Property = lambda func: property(**func()) 
-
-
-
-
 class MetaClassKeywordHandler(type):
     """
     Provides automagically generated class and instance variables according
@@ -30,8 +24,8 @@ class MetaClassKeywordHandler(type):
 
     def __init__(cls, name, bases, dct):
         # exclude the base classes from this behaviour
-        #if object in bases:
-        #    return
+        if object in bases:
+            return
 
         # collect keywords + defaults from base class
         for base in bases:
@@ -51,8 +45,11 @@ class MetaClassKeywordHandler(type):
         if len(wrong) > 0:
             raise DatabaseError("Keyword(s): {} unsupported by this Field: {}".\
                     format(", ".join(wrong), cls.__class__.__name__))
+
+        # create object instance
         out_inst = type.__call__(cls, *vargs, **kw)
 
+        # fill in key->val from 'kw' into 'out_inst', as attributes
         for key, val in cls.keywords.items():
             if key in kw:
                 setattr(out_inst, key, kw[key])
@@ -64,8 +61,8 @@ class MetaClassFieldGroup(MetaClassKeywordHandler):
 
     def __init__(cls, name, bases, dct):
         # exclude the base classes from this behaviour
-        #if object in bases:
-        #    return
+        if object in bases:
+            return
 
         assert hasattr(cls, "key2field")
         assert hasattr(cls, "cls")
@@ -74,8 +71,6 @@ class MetaClassFieldGroup(MetaClassKeywordHandler):
         cls._fields = {}
         for k, v in cls.key2field.items():
             cls._fields[k] = v
-        #    setattr(cls, k,  property(cls.getter_factory(k), 
-        #                              cls.setter_factory(k)))
 
         super(MetaClassFieldGroup, cls).__init__(name, bases, dct)
  
@@ -104,15 +99,19 @@ class SkeletonField(object):
         return self.__class__(*vargs, **kw)
 
     def get_create(self, prefix=None, suffix=None):
-        return None #(prefix or "") + (suffix or "")
+        """Returning None, means: no column in table for this field"""
+        return None 
     
     def get_escaped(self):
+        """Return database insert/update encoded/escaped representation"""
         return self.get()
 
     def pre_save(self, action="insert", obj=None):
+        """Hook to take action before a save() operation"""
         return True
 
     def post_save(self, action="insert", obj=None):
+        """Hook to take action after a save() operation"""
         return True
     
     def set(self, v):
@@ -189,13 +188,14 @@ class BaseFieldGroup(SkeletonField):
     Abstract to declare a mapping: arbitrary class <-> field(s)
     Keywords:
      'required'    -> field must be set in order to commit/saved
+     'name'        -> name of the represented field group
     """
     
     __metaclass__ = MetaClassFieldGroup
     
     keywords = {"required": False, "name": None}
 
-    # wrapped regular class
+    # wrapped class
     cls = None
     cls_ctor_args = ()
 
@@ -210,18 +210,10 @@ class BaseFieldGroup(SkeletonField):
             setattr(self, k, getattr(self._instance, k))
 
     def get_save(self):
+        return None 
+
+    def get_create(self):
         return None
-
-    #@classmethod        
-    #def getter_factory(cls, member):
-    #    def getter(self):
-    #       return self._fields[member].get()
-
-    #@classmethod
-    #def setter_factory(cls, member):
-    #    def setter(self, val):
-    #        self._fields[member].set(val)
-    #        setattr(self._instance, member, val)
 
     def set(self, val):
         if isinstance(val, self.__class__.cls):
@@ -229,6 +221,9 @@ class BaseFieldGroup(SkeletonField):
                 inval = getattr(val, k)
                 setattr(self, k, inval)
                 setattr(self._instance, k, inval)
+        else:
+            raise TypeError("Passed instance of '{}', needed: '{}'". \
+                    format(val.__class__.__name__, self.__class__.cls.__name__))
 
     def get(self):
         return self._instance
