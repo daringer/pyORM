@@ -88,16 +88,19 @@ class SQLiteDatabase(BaseDatabase):
             SQLiteDatabase.db_con = None
  
     def backup(self, fn):
-        """Backup current database to 'fn'"""
+        """Backup current database to 'fn'"""        
         dump = []
         if SQLiteDatabase.db_con:
-            for line in SQLiteDatabase.db_con.iterdump():
-                dump.append( line )
-
             new_con = sqlite.connect(fn)
-            new_con.executescript(" ".join(dump))
             new_con.isolation_level = None
-            new_con.commit()
+            for line in SQLiteDatabase.db_con.iterdump():
+                dump.append(line)
+                if len(dump) >= 1000:
+                    new_con.executescript("".join(dump))
+                    dump = []
+
+            if len(dump) > 0:
+                new_con.executescript("".join(dump))
             new_con.close()
         else:
             raise DatabaseError("No database opened")
@@ -355,7 +358,7 @@ class DataManager(object):
 
     def all(self):
         """Return all Record objects from the SQLiteDatabase"""
-        return self.record.database.filter(self.record)
+        return self.record.database.filter(self.record, limit=self.limit)
 
     def filter(self, **kw):
         """
@@ -365,7 +368,7 @@ class DataManager(object):
         """
 
         kw.update(self.pre_filter)
-        return self.record.database.filter(self.record, **kw)
+        return self.record.database.filter(self.record, limit=self.limit, **kw)
 
     def one(self, **kw):
         """
