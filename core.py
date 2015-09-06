@@ -16,7 +16,7 @@ class BaseDatabase(object):
     query_counter = 0
 
     # set to 'True' to get all plaintext sql-queries in 'stdout'
-    debug = True
+    debug = False
     
     # mmmh, system wide list of contributing records?! 
     contributed_records = []
@@ -158,7 +158,7 @@ class SQLiteDatabase(BaseDatabase):
         """
         
         if self.debug:
-            print "SQL-Query: |- {} -| values: {}".format(q, args)
+            print "[SQL]: |- {} -| values: {}".format(q, args)
 
         self.query_counter += 1
                
@@ -212,8 +212,6 @@ class SQLiteDatabase(BaseDatabase):
             if issubclass(attr_vals[i]["val"].__class__, BaseRecord):
                 attr_vals[i]["val"] = attr_vals[i]["val"].rowid
         
-        print attr_vals
-
         # construct the sql query 
         # --- UPDATE
         if act == "update":
