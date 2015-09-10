@@ -111,6 +111,9 @@ class HeadTrackData(BaseRecord):
     author = OneToOneRelation(Author, backref="het")
     multi = MultiLevelFieldGroup()
 
+class NumData(BaseRecord):
+    num = IntegerField()
+
 
 # declare a view-model providing all books 
 #class LivingInHanau(BaseView):
@@ -195,9 +198,7 @@ print head_track.multi.info
 head_track.save()
 
 print head_track.objects.all()
-print head_track.multi
 print head_track.multi.direction
-print head_track.multi.info
 
 print "head tracking data, saved---printing:"
 print "rowid", head_track.rowid
@@ -207,6 +208,19 @@ print "author", head_track.author
 m = head_track.multi
 print "multi-depth", m.pos, m.direction, m.info
 
+
+from_idx, to_idx = (9, 234)
+for i in xrange(from_idx, to_idx):
+    NumData(num=i).save()
+
+count = 0
+for row in NumData.objects.iterator():
+    count += 1
+
+assert count == (to_idx - from_idx)
+
+
+# bootstrap db (save to file, reload)
 db.backup("foo.sqlite")
 db.close()
 db.setup("foo.sqlite")
@@ -215,6 +229,7 @@ obj = head_track.objects.all()[0]
 print obj
 print obj.multi.pos, obj.multi.direction, obj.multi.info
 print obj.pos, obj.direction
-    
+
+
 
 db.close()

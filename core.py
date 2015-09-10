@@ -16,7 +16,7 @@ class BaseDatabase(object):
     query_counter = 0
 
     # set to 'True' to get all plaintext sql-queries in 'stdout'
-    debug = False
+    debug = True
     
     # mmmh, system wide list of contributing records?! 
     contributed_records = []
@@ -368,7 +368,47 @@ class DataManager(object):
         """
 
         kw.update(self.pre_filter)
-        return self.record.database.filter(self.record, limit=self.limit, **kw)
+        return self.record.database.filter(self.record, limit=self.limit, 
+                order_by=self.order_by, **kw)
+    
+    def iterator(self, prefetch_rows=100, limit=None, **kw):
+        """Returns an iterator for the selected data"""
+
+        lim = limit or self.limit
+        org_lim_length = None
+        got_rows = 0
+        
+        # either save 'old' limit to assure only that much data is iterated
+        if lim is not None:
+            org_lim_length = lim[1]
+            if lim[1] > prefetch_rows:
+                lim = (lim[0], prefetch_rows)
+            got_rows = lim[1]
+        # or set own limit starting with offset 0 for prefetch_rows
+        else:
+            lim = (0, prefetch_rows)
+
+        # generator loop
+        while True:
+            # query data
+            data = self.record.database.filter(self.record, limit=lim, **kw)
+
+            # break, if there is no more data to iterate
+            if len(data) == 0:
+                break
+
+            # yield prefetched data
+            for d in data:
+                got_rows += 1
+                yield d
+
+            # handle original limits, if applicable
+            if org_lim_length is not None and got_rows >= org_lim_length:
+                break
+
+            # keep increasing offset
+            lim = (lim[0]+lim[1], lim[1])
+
 
     def one(self, **kw):
         """
