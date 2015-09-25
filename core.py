@@ -16,7 +16,7 @@ class BaseDatabase(object):
     query_counter = 0
 
     # set to 'True' to get all plaintext sql-queries in 'stdout'
-    debug = True
+    debug = False
     
     # mmmh, system wide list of contributing records?! 
     contributed_records = []
